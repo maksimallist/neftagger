@@ -51,11 +51,6 @@ def attention_block(self, hidden_states, state_size, track_sketches=False):
         W_hss_mask = tf.to_float(tf.less_equal(tf.random_uniform(tf.shape(W_hss)),
                                                self.drop_sketch)) * tf.inv(self.drop_sketch)
 
-        # def softmax_to_hard(tensor):
-        #     max_att = tf.reduce_max(tensor, 1)
-        #     a_n = tf.cast(tf.equal(tf.expand_dims(max_att, 1), tensor), tf.float32)
-        #     return a_n
-
         # def normalize(tensor):
         #     """
         #     turn a tensor into a probability distribution
@@ -66,41 +61,45 @@ def attention_block(self, hidden_states, state_size, track_sketches=False):
         #     t = tensor / tf.expand_dims(z, 1)
         #     return t
 
-        def softmax_with_mask(tensor, tau=1.0):
-            """
-            compute the softmax including the mask
-            the mask is multiplied with exp(x), before the normalization
-            :param tensor: 2D
-            :param mask: 2D, same shape as tensor
-            :param tau: temperature, the cooler the more spiked is distribution
-            :return:
-            """
-            row_max = tf.expand_dims(tf.reduce_max(tensor, 1), 1)
-            t_shifted = tensor - row_max
-            nom = tf.exp(t_shifted / tau)
-            row_sum = tf.expand_dims(tf.reduce_sum(nom, 1), 1)
-            softmax = nom / row_sum
-            return softmax
+        # def softmax_with_mask(tensor, tau=1.0):
+        #     """
+        #     compute the softmax including the mask
+        #     the mask is multiplied with exp(x), before the normalization
+        #     :param tensor: 2D
+        #     :param mask: 2D, same shape as tensor
+        #     :param tau: temperature, the cooler the more spiked is distribution
+        #     :return:
+        #     """
+        #     row_max = tf.expand_dims(tf.reduce_max(tensor, 1), 1)
+        #     t_shifted = tensor - row_max
+        #     nom = tf.exp(t_shifted / tau)
+        #     row_sum = tf.expand_dims(tf.reduce_sum(nom, 1), 1)
+        #     softmax = nom / row_sum
+        #     return softmax
 
-        def constrained_softmax(tensor, b, temp=1.0):
+        def constrained_softmax(input_tensor, b, temp=1.0):
             """
             Compute the constrained softmax (csoftmax);
             See paper "Learning What's Easy: Fully Differentiable Neural Easy-First Taggers"
             on https://andre-martins.github.io/docs/emnlp2017_final.pdf (page 4)
 
-            :param tensor: input tensor
+            :param input_tensor: input tensor
             :param b: cumulative attention see paper
             :param temp: softmax temperature
             :return: distribution
             """
 
-            row_max = tf.expand_dims(tf.reduce_max(tensor, 1), 1)
-            t_shifted = tensor - row_max
-            nom = tf.exp(t_shifted / tau)
-            row_sum = tf.expand_dims(tf.reduce_sum(nom, 1), 1)
-            softmax = nom / row_sum
+            z = tf.reduce_sum(tf.exp(input_tensor/temp))
+            a = tf.tensordot(tf.exp(input_tensor/temp), b) / z  # TODO need T in b ?
+            u = tf.ones_like(b) - b
+            t_mask = tf.less_equal(a, u)
+            f_mask = tf.less(u, a)
+            A = tf.to_int32(a * t_mask)
+            U = tf.to_int32(u * f_mask)
 
-            return softmax
+            csoftmax = A + U
+
+            return csoftmax
 
         def z_j(j, padded_matrix):
             """

@@ -230,3 +230,35 @@ feed_dict = dict(zip(queue_input_tensors, tensorized_example))
 with tf.Session() as sess:
     sess.run(h, feed_dict=feed_dict)
     print(h)
+
+
+# def csoftmax(z, b):
+#     Z = tf.reduce_sum(tf.exp(z))
+#     a = tf.tensordot(tf.exp(z), b, axis=0) / Z
+#     u = tf.ones_like(b) - b
+#     t_mask = tf.less_equal(a, u)
+#     f_mask = tf.less(u, a)
+#     A = tf.to_int32(a * t_mask)
+#     U = tf.to_int32(u * f_mask)
+#
+#     csoftmax = A + U
+#
+#     return csoftmax
+#
+# import tensorflow as tf
+# x = tf.constant([5, 4, 3])
+# y = tf.constant([1, 7, 3])
+# def f1(): return tf.multiply(x, 17)
+# def f2(): return tf.add(y, 23)
+#
+# t_mask = tf.less_equal(x,y)
+# f_mask = tf.less(y,x)
+# X = x*tf.to_int32(t_mask)
+# Y = y*tf.to_int32(f_mask)
+# r = X + Y
+#
+# with tf.Session() as s:
+#     s.run(tf.global_variables_initializer())
+#     R = s.run(r)
+#
+# print R
