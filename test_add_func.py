@@ -232,14 +232,27 @@ with tf.Session() as sess:
     print(h)
 
 
-# def csoftmax(z, b):
-#     Z = tf.reduce_sum(tf.exp(z))
-#     a = tf.tensordot(tf.exp(z), b, axis=0) / Z
+# def constrained_softmax(input_tensor, b, temp=1.0):
+#     """
+#     Compute the constrained softmax (csoftmax);
+#     See paper "Learning What's Easy: Fully Differentiable Neural Easy-First Taggers"
+#     on https://andre-martins.github.io/docs/emnlp2017_final.pdf (page 4)
+#
+#     :param input_tensor: input tensor
+#     :param b: cumulative attention see paper
+#     :param temp: softmax temperature
+#     :return: distribution
+#     """
+#
+#     # input_tensor = tf.reduce_mean(input_tensor)
+#     z = tf.reduce_sum(tf.exp(input_tensor / temp))
+#     a = tf.exp(input_tensor / temp) * (b / temp) / z
+#     # a = tf.exp(input_tensor/temp) * b / z
 #     u = tf.ones_like(b) - b
-#     t_mask = tf.less_equal(a, u)
-#     f_mask = tf.less(u, a)
-#     A = tf.to_int32(a * t_mask)
-#     U = tf.to_int32(u * f_mask)
+#     t_mask = tf.to_float(tf.less_equal(a, u))
+#     f_mask = tf.to_float(tf.less(u, a))
+#     A = a * t_mask
+#     U = u * f_mask
 #
 #     csoftmax = A + U
 #
