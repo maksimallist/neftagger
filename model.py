@@ -20,14 +20,14 @@ def input_block(x, seq_lens, drop, lstm_units):
             fw_cell = tf.nn.rnn_cell.DropoutWrapper(fw_cell, input_keep_prob=1, output_keep_prob=drop)
             bw_cell = tf.nn.rnn_cell.DropoutWrapper(bw_cell, input_keep_prob=1, output_keep_prob=drop)
 
-            outputs, _ = tf.nn.bidirectional_dynamic_rnn(fw_cell, bw_cell, emb_drop, sequence_length=seq_lens,
+            outputs, final_state = tf.nn.bidirectional_dynamic_rnn(fw_cell, bw_cell, emb_drop, sequence_length=seq_lens,
                                                          dtype=tf.float32, time_major=False)
             outputs = tf.concat(outputs, 2)
             state_size = 2 * lstm_units  # concat of fw and bw lstm output
 
         hidden_states = outputs
 
-    return hidden_states, state_size
+    return hidden_states, final_state, state_size
 
 
 # Attention block (B_Block)
