@@ -43,14 +43,6 @@ parameters["l2_scale"] = 0  # "L2 regularization constant"
 parameters["l1_scale"] = 0  # "L1 regularization constant"
 parameters["max_gradient_norm"] = -1  # "maximum gradient norm for clipping (-1: no clipping)"
 
-# tf.app.flags.DEFINE_integer("src_vocab_size", 10000, "Vocabulary size.")
-# tf.app.flags.DEFINE_integer("tgt_vocab_size", 10000, "Vocabulary size.")
-# tf.app.flags.DEFINE_integer("max_train_data_size", 0,
-#                             "Limit on the size of training data (0: no limit).")
-# tf.app.flags.DEFINE_integer("buckets", 10, "number of buckets")
-# tf.app.flags.DEFINE_boolean("update_emb", False, "update the embeddings")
-# tf.app.flags.DEFINE_integer("threads", 8, "number of threads")
-
 
 class NEF():
     def __init__(self, params, tag_vocab, word_vocab_len, class_weights=None):
@@ -138,17 +130,17 @@ class NEF():
             self.drop_sketch = 1
 
         # network graph
-        self.x = tf.placeholder(tf.float32, [None, None, self.embeddings_dim])  # Input Text embeddings.
-        self.y = tf.placeholder(tf.int32, [None, None, self.tag_emb_dim])  # Output Tags embeddings.
+        self.x = tf.placeholder(tf.float32, [self.batch_size, self.L, self.embeddings_dim])  # Input Text embeddings.
+        self.y = tf.placeholder(tf.int32, [self.batch_size, self.L, self.tag_emb_dim])  # Output Tags embeddings.
         self.lenghs = tf.placeholder(tf.int32, [None])  # Lengths of the sentences.
 
         lstm_out, final_state, state_size = input_block(self.x, self.lenghs, self.drop, self.lstm_units)
-        sketches, cum_attentions = attention_block(lstm_out, state_size, self.window_size, self.dim_hlayer,
-                                                   self.batch_size, self.activation, self.L, self.sketches_num,
-                                                   self.attention_discount_factor)
+        self.sketches, cum_attentions = attention_block(lstm_out, state_size, self.window_size, self.dim_hlayer,
+                                                        self.batch_size, self.activation, self.L, self.sketches_num,
+                                                        self.attention_discount_factor)
 
-        sketche = sketches[-1]  # last sketch
-        hs_final = tf.concat([lstm_out, sketche], axis=2)  # [batch_size, L, 2*state_size]
+        self.sketche = self.sketches[-1]  # last sketch
+        hs_final = tf.concat([lstm_out, self.sketche], axis=2)  # [batch_size, L, 2*state_size]
 
         with tf.name_scope("Out"):
             W_out = tf.get_variable(name="W_out", shape=[2*state_size, self.labels_num],
@@ -172,9 +164,10 @@ class NEF():
                 word_label_score = score(hs_i)
                 word_label_probs = tf.nn.softmax(word_label_score)
                 word_preds = tf.argmax(word_label_probs, 1)
-                y_words_full = tf.one_hot(tf.squeeze(y_words), depth=self.labels_num, on_value=1.0, off_value=0.0)
-                cross_entropy = tf.nn.softmax_cross_entropy_with_logits(word_label_score,
-                                                                        y_words_full)
+
+                # TODO maybe input only sorted number of tags ?
+                # y_words_full = tf.one_hot(tf.squeeze(y_words), depth=self.labels_num, on_value=1.0, off_value=0.0)
+                cross_entropy = tf.nn.softmax_cross_entropy_with_logits(word_label_score, y_words)
                 return [word_preds, cross_entropy]
 
             # calculate prediction scores iteratively on "L" axis
@@ -201,13 +194,6 @@ class NEF():
                     tf.contrib.layers.l1_regularizer(self.l1_scale), weights_list=weights_list)
                 self.losses_reg += l1_loss
 
-        # self.losses = []
-        # self.losses_reg = []
-        # self.predictions = []
-        # self.sketches_tfs = []
-        # self.keep_probs = []
-        # self.keep_prob_sketches = []
-
         # gradients and update operation for training the model
         if not self.mode == 'inf':
             train_params = tf.trainable_variables()
@@ -233,26 +219,17 @@ class NEF():
         for s in example:
             lengs.append(len(s))
 
-        if mode == 'train':
-            x = np.zeros((self.batch_size, np.array(lengs).max(), self.embeddings_dim))
-            y = np.zeros((self.batch_size, np.array(lengs).max(), self.embeddings_dim))
-            word_emb = utils.load_embeddings(self.embeddings, self.embeddings_dim, self.emb_format)
+        x = np.zeros((self.batch_size, np.array(lengs).max(), self.embeddings_dim))
+        y = np.zeros((self.batch_size, np.array(lengs).max(), self.embeddings_dim))
+        word_emb = utils.load_embeddings(self.embeddings, self.embeddings_dim, self.emb_format)
 
-            for i, sent in enumerate(example):
-                for j, z in enumerate(sent):
-                    x[i, j] = word_emb[z[0]]  # words
+        for i, sent in enumerate(example):
+            for j, z in enumerate(sent):
+                x[i, j] = word_emb[z[0]]  # words
+                if mode == 'train':
                     y[i, j] = self.tag_emb[z[1]]  # tags
 
-            return x, y, lengs
-
-        else:
-            x = np.zeros((self.batch_size, np.array(lengs).max(), self.embeddings_dim))
-            word_emb = utils.load_embeddings(self.embeddings, self.embeddings_dim, self.emb_format)
-            for i, sent in enumerate(example):
-                for j, z in enumerate(sent):
-                    x[i, j] = word_emb[z[0]]  # words
-
-            return x, lengs
+        return x, y, lengs
 
     def train_op(self, example, sess):
         x, y, lengs = self.tensorize_example(example)
@@ -262,10 +239,32 @@ class NEF():
 
         return pred_labels, losses
 
-    def inference_op(self, example, sess):
+    def inference_op(self, example, sess, sketch_=False, all_=False):
         self.mode = 'inf'
-        x, lengs = self.tensorize_example(example, 'inf')
+        x, y, lengs = self.tensorize_example(example, 'inf')
 
-        pred_labels = sess.run(self.pred_labels, feed_dict={self.x: x, self.lenghs: lengs})
+        if sketch_:
+            if all_:
+                pred_labels, sketch = sess.run([self.pred_labels, self.sketches],
+                                               feed_dict={self.x: x, self.y: y, self.lenghs: lengs})
+            else:
+                pred_labels, sketch = sess.run([self.pred_labels, self.sketche],
+                                               feed_dict={self.x: x, self.y: y, self.lenghs: lengs})
+            return pred_labels, sketch
+        else:
+            pred_labels = sess.run(self.pred_labels, feed_dict={self.x: x, self.y: y, self.lenghs: lengs})
 
-        return pred_labels
+            return pred_labels
+
+    def load(self, sess, path):
+
+        if tf.gfile.Exists(path):
+            print "[ Reading model parameters from {} ]".format(path)
+            self.saver.restore(sess, path)
+        else:
+            raise ValueError('No checkpoint in path {}'.format(path))
+
+    def save(self, sess, path, graph=False):
+        self.saver.save(sess, path, write_meta_graph=graph)
+
+
