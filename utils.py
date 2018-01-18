@@ -7,11 +7,14 @@ import collections
 import tensorflow as tf
 
 
-def read_dataset(fname, maximum_sentence_length=-1, read_ordering=False):
+def read_dataset(fname, maximum_sentence_length=-1, read_ordering=False, split=True):
     sent = []
+    sent_tag = []
     ordering = None
     sentences = []
+    tags = []
     orderings = []
+
     for line in file(fname):
         if ordering is None and read_ordering:
             line = line.lstrip('#')
@@ -32,12 +35,23 @@ def read_dataset(fname, maximum_sentence_length=-1, read_ordering=False):
                     sentences.append(sent)
             sent = []
             ordering = None
+
+            if sent_tag and (maximum_sentence_length < 0 or
+                             len(sent_tag) < maximum_sentence_length):
+                tags.append(sent_tag)
+
+            sent_tag = []
         else:
             w, t = line[0], line[-1]
-            # w, t = line[-2:]
-            sent.append((w, t))
-    if read_ordering:
-        return sentences, orderings
+            if split:
+                sent.append(w)
+                sent_tag.append(t)
+            else:
+                sent.append((w, t))
+    if read_ordering and split:
+        return sentences, tags, orderings
+    elif not read_ordering and split:
+        return sentences, tags
     else:
         return sentences
 
@@ -146,6 +160,63 @@ def create_vocabulary(corpora, word_cutoff=0, lower_case=False):
     print('Tags: %d' % tag_vocabulary.size())
 
     return word_vocabulary, tag_vocabulary, word_counter
+
+
+def accuracy(y_i, predictions):
+    """
+    Accuracy of word predictions
+    :param y_i:
+    :param predictions:
+    :return:
+    """
+    assert len(y_i) == len(predictions)
+    correct_words, all = 0.0, 0.0
+    for y, y_pred in zip(y_i, predictions):
+        # predictions can be shorter than y, because inputs are cropped to specified maximum length
+        for y_w, y_pred_w in zip(y, y_pred):
+            all += 1
+            if y_pred_w == y_w:
+                correct_words += 1
+    return correct_words/all
+
+
+def f1s_binary(y_i, predictions):
+    """
+    F1 scores of two-class predictions
+    :param y_i:
+    :param predictions:
+    :return: F1_class1, F1_class2
+    """
+    assert len(y_i) == len(predictions)
+    fp_1 = 0.0
+    tp_1 = 0.0
+    fn_1 = 0.0
+    tn_1 = 0.0
+    for y, y_pred in zip(y_i, predictions):
+        for y_w, y_pred_w in zip(y, y_pred):
+            if y_w == 0:  # true class is 0
+                if y_pred_w == 0:
+                    tp_1 += 1
+                else:
+                    fn_1 += 1
+            else:  # true class is 1
+                if y_pred_w == 0:
+                    fp_1 += 1
+                else:
+                    tn_1 += 1
+    tn_2 = tp_1
+    fp_2 = fn_1
+    fn_2 = fp_1
+    tp_2 = tn_1
+    precision_1 = tp_1 / (tp_1 + fp_1) if (tp_1 + fp_1) > 0 else 0
+    precision_2 = tp_2 / (tp_2 + fp_2) if (tp_2 + fp_2) > 0 else 0
+    recall_1 = tp_1 / (tp_1 + fn_1) if (tp_1 + fn_1) > 0 else 0
+    recall_2 = tp_2 / (tp_2 + fn_2) if (tp_2 + fn_2) > 0 else 0
+    f1_1 = 2 * (precision_1*recall_1) / (precision_1 + recall_1) if (precision_1 + recall_1) > 0 \
+        else 0
+    f1_2 = 2 * (precision_2*recall_2) / (precision_2 + recall_2) if (precision_2 + recall_2) > 0 \
+        else 0
+    return f1_1, f1_2
 
 
 def attention_block_with_csoftmax(hidden_states, state_size, window_size, dim_hlayer, batch_size,
