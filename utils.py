@@ -1,6 +1,9 @@
 from collections import defaultdict
 from itertools import count
 from collections import Counter
+import fasttext
+import numpy as np
+import collections
 
 
 def read_dataset(fname, maximum_sentence_length=-1, read_ordering=False):
@@ -167,4 +170,3 @@ def tensorize_example(example, batch_size,
                 pass
 
     return x, y, lengs
-

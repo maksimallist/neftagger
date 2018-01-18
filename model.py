@@ -21,7 +21,7 @@ def input_block(x, seq_lens, drop, lstm_units):
             bw_cell = tf.nn.rnn_cell.DropoutWrapper(bw_cell, input_keep_prob=1, output_keep_prob=drop)
 
             outputs, final_state = tf.nn.bidirectional_dynamic_rnn(fw_cell, bw_cell, emb_drop, sequence_length=seq_lens,
-                                                         dtype=tf.float32, time_major=False)
+                                                                   dtype=tf.float32, time_major=False)
             outputs = tf.concat(outputs, 2)
             state_size = 2 * lstm_units  # concat of fw and bw lstm output
 
@@ -115,10 +115,19 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
 
             attentions = tf.stack(attentions, axis=1)  # [batch_size, L]
             attentions = attentions - cum_attention*discount_factor
-            constrained_weights = constrained_softmax(attentions, cum_attention)
+            constrained_weights = constrained_softmax(attentions, cum_attention)  # [batch_size, 1]
 
-            cn = tf.reduce_sum(tensor*constrained_weights, axis=1)
-            S = activation(tf.matmul(cn, W_hh) + w_h)*constrained_weights
+            # TODO: check !!!
+            # cn = tf.reduce_sum(tensor*constrained_weights, axis=1)  # [batch_size, 1,
+            #  2*state_size*(2*window_size + 1)] ?
+            cn = tf.matmul(tf.expand_dims(constrained_weights, [1]), tensor)  # [batch_size, 1,
+            #  2*state_size*(2*window_size + 1)]
+            cn = tf.reshape(cn, [batch_size, 2*state_size*(2*window_size + 1)])  # [batch_size,
+            #  2*state_size*(2*window_size + 1)]
+            S = activation(tf.matmul(cn, W_hh) + w_h)  # [batch_size, state_size]
+
+            S = tf.matmul(tf.expand_dims(constrained_weights, [2]), tf.expand_dims(S, [1]))  # [batch_size, L,
+            #  state_size]
 
             return S, constrained_weights
 
@@ -126,6 +135,7 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
         cum_att = tf.zeros(shape=[batch_size, L])  # cumulative attention
         padding_hs_col = tf.constant([[0, 0], [window_size, window_size], [0, 0]], name="padding_hs_col")
         sketches = []
+        cum_attentions = []
 
         def prepare_tensor(hidstates, sk, padding_col):
             hs = tf.concat(2, [hidstates, sk])
@@ -138,6 +148,7 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
             sketch_, cum_att_ = sketch_step(prepare_tensor(hidden_states, sketch, padding_hs_col), cum_att, dim_hlayer)
             sketch += sketch_
             cum_att += cum_att_
-            sketches.append(sketch_)  # list of tensors with shape [batch_size, L]
+            sketches.append(sketch_)  # list of tensors with shape [batch_size, L, state_size]
+            cum_attentions.append(cum_att_)  # list of tensors with shape [batch_size, L]
 
-    return sketches
+    return sketches, cum_attentions

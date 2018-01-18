@@ -22,6 +22,7 @@ parameters['maximum_L'] = 58  # ??? # maximum length of sequences
 parameters['activation'] = 'tanh'  # activation function for dense layers in net
 parameters['embeddings'] = ''  # path to source language embeddings.
 parameters['embeddings_dim'] = 100  # 300 # dimensionality of embeddings
+parameters['emb_format'] = 'bin'  # binary model or vec file
 parameters['labels_num'] = 7  # number of labels
 parameters['sketches_num'] = 50  # number of sketches
 parameters['dim_hlayer'] = 20  # dimensionality of hidden layer
@@ -38,16 +39,16 @@ parameters['restore'] = False  # restoring last session from checkpoint
 parameters['interactive'] = False  # interactive mode
 parameters['track_sketches'] = False  # keep track of the sketches during learning
 parameters['sketch_sentence_id'] = 434  # sentence id of sample (dev) to keep track of during sketching
+parameters["l2_scale"] = 0  # "L2 regularization constant"
+parameters["l1_scale"] = 0  # "L1 regularization constant"
+parameters["max_gradient_norm"] = -1  # "maximum gradient norm for clipping (-1: no clipping)"
+
 # tf.app.flags.DEFINE_integer("src_vocab_size", 10000, "Vocabulary size.")
 # tf.app.flags.DEFINE_integer("tgt_vocab_size", 10000, "Vocabulary size.")
 # tf.app.flags.DEFINE_integer("max_train_data_size", 0,
 #                             "Limit on the size of training data (0: no limit).")
-# tf.app.flags.DEFINE_float("max_gradient_norm", -1,
-#                           "maximum gradient norm for clipping (-1: no clipping)")
 # tf.app.flags.DEFINE_integer("buckets", 10, "number of buckets")
 # tf.app.flags.DEFINE_boolean("update_emb", False, "update the embeddings")
-# tf.app.flags.DEFINE_float("l2_scale", 0, "L2 regularization constant")
-# tf.app.flags.DEFINE_float("l1_scale", 0, "L1 regularization constant")
 # tf.app.flags.DEFINE_integer("threads", 8, "number of threads")
 
 
@@ -57,6 +58,7 @@ class NEF():
         self.L = params['maximum_L']
         self.labels_num = params['labels_num']
         self.embeddings_dim = params['embeddings_dim']
+        self.emb_format = params['emb_format']
         self.tag_emb_dim = params['tag_emb_dim']
         self.word_vocab_len = word_vocab_len
         self.sketches_num = params['sketches_num']
@@ -80,12 +82,18 @@ class NEF():
         # self.l1_scale = params['l1_scale']
         self.drop = params['drop_prob']
         self.mode = params['mode']
+
+        if self.mode not in ['train', 'inf']:
+            raise ValueError('Not implemented mode = {}'.format(self.mode))
+
         self.drop_sketch = params['drop_prob_sketch']
         # self.max_gradient_norm = max_gradient_norm
         # self.update_emb = update_emb
         self.attention_temperature = params['attention_temperature']
         self.attention_discount_factor = params['attention_discount_factor']
-
+        self.max_gradient_norm = params['max_gradient_norm']
+        self.l2_scale = params['l2_scale']
+        self.l1_scale = params['l1_scale']
         self.class_weights = class_weights if class_weights is not None else [1. / self.labels_num] * self.labels_num
 
         self.path = 'Config:\nTask: NER\nNet configuration:\n\tLSTM: bi-LSTM; LSTM units: {0};\n\t\'' \
@@ -130,82 +138,68 @@ class NEF():
             self.drop_sketch = 1
 
         # network graph
-        x = tf.placeholder(tf.float64, [None, None, self.embeddings_dim])  # Input Text embeddings.
-        y = tf.placeholder(tf.int32, [None, None, self.tag_emb_dim])  # Output Tags embeddings.
-        l = tf.placeholder(tf.int32, [None])  # Lengths of the sentences.
+        self.x = tf.placeholder(tf.float32, [None, None, self.embeddings_dim])  # Input Text embeddings.
+        self.y = tf.placeholder(tf.int32, [None, None, self.tag_emb_dim])  # Output Tags embeddings.
+        self.lenghs = tf.placeholder(tf.int32, [None])  # Lengths of the sentences.
 
-        A_out, final_state, state_size = input_block(x, l, self.drop, self.lstm_units)
-        sketches = attention_block(A_out, state_size, self.window_size, self.dim_hlayer, self.batch_size,
-                                   self.activation, self.L, self.sketches_num, self.attention_discount_factor)
+        lstm_out, final_state, state_size = input_block(self.x, self.lenghs, self.drop, self.lstm_units)
+        sketches, cum_attentions = attention_block(lstm_out, state_size, self.window_size, self.dim_hlayer,
+                                                   self.batch_size, self.activation, self.L, self.sketches_num,
+                                                   self.attention_discount_factor)
 
-        Sketches = tf.stack(sketches, axis=2)  # TODO: check right axis
-        hsk = tf.concat([final_state, Sketches], axis=2)  # [batch_size, L, state_size + num_sketches]
-
-        new_state = state_size + self.sketches_num
+        sketche = sketches[-1]  # last sketch
+        hs_final = tf.concat([lstm_out, sketche], axis=2)  # [batch_size, L, 2*state_size]
 
         with tf.name_scope("Out"):
-            W_out = tf.get_variable(name="W_out", shape=[new_state, self.tag_emb_dim],
+            W_out = tf.get_variable(name="W_out", shape=[2*state_size, self.labels_num],
                                     initializer=tf.contrib.layers.xavier_initializer(uniform=True, dtype=tf.float32))
-            b_out = tf.get_variable(name="w_out", shape=[self.tag_emb_dim],
+            b_out = tf.get_variable(name="w_out", shape=[self.labels_num],
                                     initializer=tf.random_uniform_initializer(dtype=tf.float32))
 
+            def score(hs_j):
+                """
+                Score the word at index j, returns state vector for this word (column) across batch
+                """
+                l = tf.matmul(tf.reshape(hs_j, [self.batch_size, 2 * state_size]), W_out) + b_out
 
-        # with tf.name_scope("scoring"):
-        #
-        #     w_p = tf.get_variable(name="w_p", shape=[labels_num],
-        #                           initializer=tf.random_uniform_initializer(dtype=tf.float32))
-        #
-        #     wsp_size = 2 * state_size
-        #
-        #     W_sp = tf.get_variable(name="W_sp", shape=[wsp_size, labels_num],
-        #                            initializer=tf.contrib.layers.xavier_initializer(uniform=True, dtype=tf.float32))
-        #
-        #     # if class_weights is not None:
-        #     #     class_weights = tf.constant(class_weights, name="class_weights")
-        #
-        #     def score(hs_j):
-        #         """
-        #         Score the word at index j, returns state vector for this word (column) across batch
-        #         """
-        #         l = tf.matmul(tf.reshape(hs_j, [batch_size, 2 * state_size]), W_sp) + w_p
-        #
-        #         return l  # batch_size x K
-        #
-        #     def score_predict_loss(score_input):
-        #         """
-        #         Predict a label for an input, compute the loss and return label and loss
-        #         """
-        #         [hs_i, y_words] = score_input
-        #         word_label_score = score(hs_i)
-        #         word_label_probs = tf.nn.softmax(word_label_score)
-        #         word_preds = tf.argmax(word_label_probs, 1)
-        #         y_words_full = tf.one_hot(tf.squeeze(y_words), depth=labels_num, on_value=1.0, off_value=0.0)
-        #         cross_entropy = tf.nn.softmax_cross_entropy_with_logits(word_label_score,
-        #                                                                 y_words_full)
-        #         return [word_preds, cross_entropy]
-        #
-        #
-        #     S = HS
-        #
-        #     scores_pred = tf.map_fn(score_predict_loss,
-        #                             [tf.transpose(S, [1, 0, 2]), tf.transpose(y, [1, 0])],
-        #                             dtype=[tf.int64, tf.float32])  # elems are unpacked along dim 0 -> L
-        #     pred_labels = scores_pred[0]
-        #     losses = scores_pred[1]
-        #
-        #     losses = tf.reduce_mean(tf.cast(mask, tf.float32) * tf.transpose(losses, [1, 0]), 1)  # masked, batch_size x 1
-        #     losses_reg = losses
-        #     if l2_scale > 0:
-        #         weights_list = [W_hss, W_sp]  # M_src, M_tgt word embeddings not included
-        #         l2_loss = tf.contrib.layers.apply_regularization(
-        #             tf.contrib.layers.l2_regularizer(l2_scale), weights_list=weights_list)
-        #         losses_reg += l2_loss
-        #     if l1_scale > 0:
-        #         weights_list = [W_hss, W_sp]
-        #         l1_loss = tf.contrib.layers.apply_regularization(
-        #             tf.contrib.layers.l1_regularizer(l1_scale), weights_list=weights_list)
-        #         losses_reg += l1_loss
+                return l  # batch_size x K
 
+            def score_predict_loss(score_input):
+                """
+                Predict a label for an input, compute the loss and return label and loss
+                """
+                [hs_i, y_words] = score_input
+                word_label_score = score(hs_i)
+                word_label_probs = tf.nn.softmax(word_label_score)
+                word_preds = tf.argmax(word_label_probs, 1)
+                y_words_full = tf.one_hot(tf.squeeze(y_words), depth=self.labels_num, on_value=1.0, off_value=0.0)
+                cross_entropy = tf.nn.softmax_cross_entropy_with_logits(word_label_score,
+                                                                        y_words_full)
+                return [word_preds, cross_entropy]
+
+            # calculate prediction scores iteratively on "L" axis
+            scores_pred = tf.map_fn(score_predict_loss,
+                                    [tf.transpose(hs_final, [1, 0, 2]), tf.transpose(self.y, [1, 0, 2])],
+                                    dtype=[tf.int64, tf.float32])  # elems are unpacked along dim 0 -> L
+
+            self.pred_labels = scores_pred[0]
+            self.losses = scores_pred[1]
+
+            # masked, batch_size x 1 (regularization like dropout but mask)
+            # losses = tf.reduce_mean(tf.cast(mask, tf.float32) * tf.transpose(losses, [1, 0]), 1)
+            self.losses_reg = tf.reduce_mean(tf.transpose(self.losses, [1, 0]), 1)
+            # regularization
+            W_hh = tf.get_variable(name='W_hh')
+            if self.l2_scale > 0:
+                weights_list = [W_hh, W_out]  # word embeddings not included
+                l2_loss = tf.contrib.layers.apply_regularization(
+                    tf.contrib.layers.l2_regularizer(self.l2_scale), weights_list=weights_list)
+                self.losses_reg += l2_loss
+            if self.l1_scale > 0:
+                weights_list = [W_hh, W_out]
+                l1_loss = tf.contrib.layers.apply_regularization(
+                    tf.contrib.layers.l1_regularizer(self.l1_scale), weights_list=weights_list)
+                self.losses_reg += l1_loss
 
         # self.losses = []
         # self.losses_reg = []
@@ -214,28 +208,23 @@ class NEF():
         # self.keep_probs = []
         # self.keep_prob_sketches = []
 
+        # gradients and update operation for training the model
+        if not self.mode == 'inf':
+            train_params = tf.trainable_variables()
+            gradients = tf.gradients(tf.reduce_mean(self.losses_reg, 0), train_params)  # batch normalization
+            if self.max_gradient_norm > -1:
+                clipped_gradients, norm = tf.clip_by_global_norm(gradients, self.max_gradient_norm)
+                self.update = self.optimizer.apply_gradients(zip(clipped_gradients, train_params))
 
-        # # gradients and update operation for training the model
-        # if not self.mode == 'inf':
-        #     params = tf.trainable_variables()
-        #     self.gradient_norms = []
-        #     self.updates = []
-        #     for j in xrange(len(buckets)):
-        #         gradients = tf.gradients(tf.reduce_mean(self.losses_reg[j], 0), params)  # batch normalization
-        #         if max_gradient_norm > -1:
-        #             clipped_gradients, norm = tf.clip_by_global_norm(gradients, max_gradient_norm)
-        #             self.gradient_norms.append(norm)
-        #             update = self.optimizer.apply_gradients(zip(clipped_gradients, params))
-        #             self.updates.append(update)
-        #
-        #         else:
-        #             self.gradient_norms.append(tf.global_norm(gradients))
-        #             update = self.optimizer.apply_gradients(zip(gradients, params))
-        #             self.updates.append(update)
+            else:
+                self.update = self.optimizer.apply_gradients(zip(gradients, train_params))
 
         self.saver = tf.train.Saver(tf.all_variables())
 
     def tensorize_example(self, example, mode='train'):
+
+        if mode not in ['train', 'inf']:
+            raise ValueError('Not implemented mode = {}'.format(mode))
 
         sent_num = len(example)
         assert sent_num <= self.batch_size
@@ -244,36 +233,39 @@ class NEF():
         for s in example:
             lengs.append(len(s))
 
-        x = np.zeros((self.batch_size, np.array(lengs).max(), self.embeddings_dim))
-        if mode == 'inf':
+        if mode == 'train':
+            x = np.zeros((self.batch_size, np.array(lengs).max(), self.embeddings_dim))
             y = np.zeros((self.batch_size, np.array(lengs).max(), self.embeddings_dim))
-        word_emb = utils.load_embeddings(self.embeddings)
+            word_emb = utils.load_embeddings(self.embeddings, self.embeddings_dim, self.emb_format)
 
-        for i, sent in enumerate(example):
-            for j, z in enumerate(sent):
-                x[i, j] = word_emb[z[0]]  # words
-                if mode == 'inf':
+            for i, sent in enumerate(example):
+                for j, z in enumerate(sent):
+                    x[i, j] = word_emb[z[0]]  # words
                     y[i, j] = self.tag_emb[z[1]]  # tags
 
-        if mode == 'inf':
-            return x, lengs
-        else:
             return x, y, lengs
 
-    def start_enqueue_thread(self, train_example, returning=False):
-        """
-        Initialize queue of tensors that feed one at the input of the model.
-        Args:
-            train_example: modified dict from agent
-            is_training: training flag
-            returning: returning flag
-        Returns:
-            if returning is True, return list of variables:
-                [word_emb, char_index, text_len, speaker_ids, genre, is_training, gold_starts, gold_ends, cluster_ids]
-        """
-        tensorized_example = self.tensorize_example(train_example)
-        feed_dict = dict(zip(self.queue_input_tensors, tensorized_example))
-        self.sess.run(self.enqueue_op, feed_dict=feed_dict)
-        if returning:
-            return tensorized_example
+        else:
+            x = np.zeros((self.batch_size, np.array(lengs).max(), self.embeddings_dim))
+            word_emb = utils.load_embeddings(self.embeddings, self.embeddings_dim, self.emb_format)
+            for i, sent in enumerate(example):
+                for j, z in enumerate(sent):
+                    x[i, j] = word_emb[z[0]]  # words
 
+            return x, lengs
+
+    def train_op(self, example, sess):
+        x, y, lengs = self.tensorize_example(example)
+
+        pred_labels, losses, _ = sess.run([self.pred_labels, self.losses_reg, self.update],
+                                          feed_dict={self.x: x, self.y: y, self.lenghs: lengs})
+
+        return pred_labels, losses
+
+    def inference_op(self, example, sess):
+        self.mode = 'inf'
+        x, lengs = self.tensorize_example(example, 'inf')
+
+        pred_labels = sess.run(self.pred_labels, feed_dict={self.x: x, self.lenghs: lengs})
+
+        return pred_labels
