@@ -221,21 +221,26 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
             sketch_init = tf.zeros(shape=[batch_size, L, state_size], dtype=tf.float32)  # sketch tenzor
             cum_att_init = tf.zeros(shape=[batch_size, L])  # cumulative attention
 
-            W_hh = tf.get_variable(name="W_hh", shape=[2 * state_size * (2 * window_size + 1), state_size],
-                                   initializer=tf.contrib.layers.xavier_initializer(uniform=True, dtype=tf.float32))
+            with tf.variable_scope("W_hh_scope", reuse=tf.AUTO_REUSE):
+                W_hh = tf.get_variable(name="W_hh", shape=[2 * state_size * (2 * window_size + 1), state_size],
+                                       initializer=tf.contrib.layers.xavier_initializer(uniform=True, dtype=tf.float32))
 
-            w_h = tf.get_variable(name="w_z", shape=[state_size],
-                                  initializer=tf.random_uniform_initializer(dtype=tf.float32))
+            with tf.variable_scope("w_h_scope", reuse=tf.AUTO_REUSE):
+                w_h = tf.get_variable(name="w_h", shape=[state_size],
+                                      initializer=tf.random_uniform_initializer(dtype=tf.float32))
 
-            v = tf.get_variable(name="v", shape=[hidden_dim, 1],
-                                initializer=tf.random_uniform_initializer(dtype=tf.float32))
+            with tf.variable_scope("v_scope", reuse=tf.AUTO_REUSE):
+                v = tf.get_variable(name="v", shape=[hidden_dim, 1],
+                                    initializer=tf.random_uniform_initializer(dtype=tf.float32))
 
-            W_hsz = tf.get_variable(name="W_hsz", shape=[2 * state_size * (2 * window_size + 1), hidden_dim],
-                                    initializer=tf.contrib.layers.xavier_initializer(uniform=True,
+            with tf.variable_scope("W_hsz_scope", reuse=tf.AUTO_REUSE):
+                W_hsz = tf.get_variable(name="W_hsz", shape=[2 * state_size * (2 * window_size + 1), hidden_dim],
+                                        initializer=tf.contrib.layers.xavier_initializer(uniform=True,
                                                                                      dtype=tf.float32))
 
-            w_z = tf.get_variable(name="w_z", shape=[hidden_dim],
-                                  initializer=tf.random_uniform_initializer(dtype=tf.float32))
+            with tf.variable_scope("w_z_scope", reuse=tf.AUTO_REUSE):
+                w_z = tf.get_variable(name="w_z", shape=[hidden_dim],
+                                      initializer=tf.random_uniform_initializer(dtype=tf.float32))
 
             # create queues
             sketch_q = tf.FIFOQueue(1, dtypes=tf.float32)
