@@ -182,6 +182,13 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
             # switch back: batch_size x L x (2*r+1)*2(state_size) (batch-major)
             return batch_major_contexts
 
+        def prepare_tensor(hidstates, sk, padding_col):
+            hs = tf.concat([hidstates, sk], 2)
+            # add column on right and left, and add context window
+            hs = tf.pad(hs, padding_col, "CONSTANT", name="HS_padded")
+            hs = conv_r(hs, window_size)  # [batch_size, L, 2*state*(2*window_size + 1)]
+            return hs
+
         # TODO: temperature in tf constant
         def constrained_softmax(input_tensor, b, temp):
             """
@@ -257,13 +264,6 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
 
             return s, constrained_weights
 
-        def prepare_tensor(hidstates, sk, padding_col):
-            hs = tf.concat([hidstates, sk], 2)
-            # add column on right and left, and add context window
-            hs = tf.pad(hs, padding_col, "CONSTANT", name="HS_padded")
-            hs = conv_r(hs, window_size)  # [batch_size, L, 2*state*(2*window_size + 1)]
-            return hs
-
         sketch = tf.zeros(shape=[batch_size, L, state_size], dtype=tf.float32)  # sketch tenzor
         cum_att = tf.zeros(shape=[batch_size, L])  # cumulative attention
         padding_hs_col = tf.constant([[0, 0], [window_size, window_size], [0, 0]], name="padding_hs_col")
@@ -271,8 +271,8 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
         sketches = []
         cum_attentions = []
 
-        for i in xrange(sketches_num):
-            with tf.variable_scope("sketch_loop", reuse=tf.AUTO_REUSE):
+        with tf.variable_scope("sketch_loop", reuse=tf.AUTO_REUSE):
+            for i in xrange(sketches_num):
                 sketch_, cum_att_ = sketch_step(prepare_tensor(hidden_states, sketch, padding_hs_col), cum_att,
                                                 dim_hlayer, temperature)
                 sketch += sketch_
