@@ -185,7 +185,7 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
 
             return csoftmax
 
-        def imagination(tensor, hidden_dim, temper, pad_col):
+        def imagination(tensor, hidden_dim, n, temper, pad_col):
 
             def conv_r(padded_matrix, r):
                 """
@@ -221,24 +221,20 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
             sketch_init = tf.zeros(shape=[batch_size, L, state_size], dtype=tf.float32)  # sketch tenzor
             cum_att_init = tf.zeros(shape=[batch_size, L])  # cumulative attention
 
-            with tf.variable_scope("W_hh_scope", reuse=True):
+            with tf.variable_scope("loop_matrix", reuse=tf.AUTO_REUSE):
                 W_hh = tf.get_variable(name="W_hh", shape=[2 * state_size * (2 * window_size + 1), state_size],
                                        initializer=tf.contrib.layers.xavier_initializer(uniform=True, dtype=tf.float32))
 
-            with tf.variable_scope("w_h_scope", reuse=True):
                 w_h = tf.get_variable(name="w_h", shape=[state_size],
                                       initializer=tf.random_uniform_initializer(dtype=tf.float32))
 
-            with tf.variable_scope("v_scope", reuse=True):
                 v = tf.get_variable(name="v", shape=[hidden_dim, 1],
                                     initializer=tf.random_uniform_initializer(dtype=tf.float32))
 
-            with tf.variable_scope("W_hsz_scope", reuse=True):
                 W_hsz = tf.get_variable(name="W_hsz", shape=[2 * state_size * (2 * window_size + 1), hidden_dim],
                                         initializer=tf.contrib.layers.xavier_initializer(uniform=True,
                                                                                      dtype=tf.float32))
 
-            with tf.variable_scope("w_z_scope", reuse=True):
                 w_z = tf.get_variable(name="w_z", shape=[hidden_dim],
                                       initializer=tf.random_uniform_initializer(dtype=tf.float32))
 
@@ -251,7 +247,7 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
             cum_att_q.enqueue(cum_att_init)
 
             # starting sketching "imagination" cycle
-            for i in xrange(sketches_num):
+            for i in xrange(n):
                 # pull out sketch_i and cumulative_attention_i from queues
                 sketch_i = sketch_q.dequeue()
                 cum_att_i = cum_att_q.dequeue()
@@ -310,7 +306,7 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
         # sketches = []
         # cum_attentions = []
 
-        sketch, cumulative_att = imagination(hidden_states, dim_hlayer, temperature, padding_hs_col)
+        sketch, cumulative_att = imagination(hidden_states, dim_hlayer, sketches_num, temperature, padding_hs_col)
 
     return sketch, cumulative_att
 
@@ -455,7 +451,9 @@ class NEF():
             # losses = tf.reduce_mean(tf.cast(mask, tf.float32) * tf.transpose(losses, [1, 0]), 1)
             self.losses_reg = tf.reduce_mean(tf.transpose(self.losses, [1, 0]), 1)
             # regularization
-            W_hh = tf.get_variable(name='W_hh', shape=[2 * state_size * (2 * self.window_size + 1), state_size])
+            with tf.variable_scope('loop_matrix', reuse=tf.AUTO_REUSE):
+                W_hh = tf.get_variable(name='W_hh')
+
             if self.l2_scale > 0:
                 weights_list = [W_hh, W_out]  # word embeddings not included
                 l2_loss = tf.contrib.layers.apply_regularization(
