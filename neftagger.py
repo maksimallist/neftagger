@@ -217,6 +217,11 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
                 hs = conv_r(hs, window_size)  # [batch_size, L, 2*state*(2*window_size + 1)]
                 return hs
 
+            def attention(t):
+                before_att = activation(tf.matmul(t, W_hsz) + w_z)
+                att = tf.matmul(before_att, v)  # [batch_size, 1]
+                return att
+
             # Initialize needed parameters and matrix
             sketch_init = tf.zeros(shape=[batch_size, L, state_size], dtype=tf.float32)  # sketch tenzor
             cum_att_init = tf.zeros(shape=[batch_size, L])  # cumulative attention
@@ -255,11 +260,6 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
                 # concat input tenzor with sketch_i
                 z = tf.concat([tensor, sketch_i], 2)
                 z = prepare_tensor(z, pad_col)
-
-                def attention(t):
-                    before_att = activation(tf.matmul(t, W_hsz) + w_z)
-                    att = tf.matmul(before_att, v)  # [batch_size, 1]
-                    return att
 
                 att_stacked = tf.map_fn(attention, tf.transpose(z, [1, 0, 2]), dtype=tf.float32)
                 # print 'shape of stack', att_stacked.shape
