@@ -255,27 +255,18 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
                 # concat input tenzor with sketch_i
                 z = tf.concat([tensor, sketch_i], 2)
                 z = prepare_tensor(z, pad_col)
-                # slicing input tenzor on L parts
-                slices = tf.split(z, L, axis=1)
 
-                # create queue for slices and fill it
-                slice_q = tf.FIFOQueue(L, dtypes=tf.float32)
-                slice_q.enqueue_many(slices)
-
-                # create list for attentions
-                attentions = []
-
-                # start tags cycle for calculate csoftmax for hole batch
-                for j in xrange(L):
-                    #
-                    t = slice_q.dequeue()
+                def attention(t):
                     before_att = activation(tf.matmul(t, W_hsz) + w_z)
                     att = tf.matmul(before_att, v)  # [batch_size, 1]
-                    attentions.append(att)
+                    return att
 
-                #
-                att_stacked = tf.stack(attentions, axis=1)  # [batch_size, 1, L]
-                att_stacked = tf.squeeze(att_stacked) - cum_att_i * discount_factor  # [batch_size, L]
+                att_stacked = tf.map_fn(attention, tf.transpose(z, [1, 0, 2]), dtype=tf.float32)
+                # print 'shape of stack', att_stacked.shape
+                att_stacked = tf.reshape(att_stacked, [batch_size, L])
+                # print 'shape of stack', att_stacked.shape
+                att_stacked = att_stacked - cum_att_i * discount_factor  # [batch_size, L]
+                # print 'shape of stack', att_stacked.shape
                 constrained_weights = constrained_softmax(att_stacked, cum_att_i, temper)  # [batch_size, L]
 
                 #
