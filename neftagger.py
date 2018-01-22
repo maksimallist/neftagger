@@ -216,53 +216,54 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
 
             return csoftmax
 
-        def sketch_step(tensor, cum_attention, hidden_dim, temper):
+        with tf.variable_scope("sketch_loop", reuse=tf.AUTO_REUSE):
+            def sketch_step(tensor, cum_attention, hidden_dim, temper):
 
-            bs_split = tf.split(tensor, L, axis=1)
-            attentions = []
+                bs_split = tf.split(tensor, L, axis=1)
+                attentions = []
 
-            with tf.variable_scope("W_hh_scope", reuse=tf.AUTO_REUSE):
-                W_hh = tf.get_variable(name="W_hh", shape=[2 * state_size * (2 * window_size + 1), state_size],
-                                       initializer=tf.contrib.layers.xavier_initializer(uniform=True, dtype=tf.float32))
+                with tf.variable_scope("W_hh_scope", reuse=tf.AUTO_REUSE):
+                    W_hh = tf.get_variable(name="W_hh", shape=[2 * state_size * (2 * window_size + 1), state_size],
+                                           initializer=tf.contrib.layers.xavier_initializer(uniform=True, dtype=tf.float32))
 
-            with tf.variable_scope("w_h_scope", reuse=tf.AUTO_REUSE):
-                w_h = tf.get_variable(name="w_z", shape=[state_size],
-                                      initializer=tf.random_uniform_initializer(dtype=tf.float32))
+                with tf.variable_scope("w_h_scope", reuse=tf.AUTO_REUSE):
+                    w_h = tf.get_variable(name="w_z", shape=[state_size],
+                                          initializer=tf.random_uniform_initializer(dtype=tf.float32))
 
-            with tf.variable_scope("v_scope", reuse=tf.AUTO_REUSE):
-                v = tf.get_variable(name="v", shape=[hidden_dim, 1],
-                                    initializer=tf.random_uniform_initializer(dtype=tf.float32))
+                with tf.variable_scope("v_scope", reuse=tf.AUTO_REUSE):
+                    v = tf.get_variable(name="v", shape=[hidden_dim, 1],
+                                        initializer=tf.random_uniform_initializer(dtype=tf.float32))
 
-            with tf.variable_scope("W_hsz_scope", reuse=tf.AUTO_REUSE):
-                W_hsz = tf.get_variable(name="W_hsz", shape=[2 * state_size * (2 * window_size + 1), hidden_dim],
-                                        initializer=tf.contrib.layers.xavier_initializer(uniform=True,
-                                                                                         dtype=tf.float32))
+                with tf.variable_scope("W_hsz_scope", reuse=tf.AUTO_REUSE):
+                    W_hsz = tf.get_variable(name="W_hsz", shape=[2 * state_size * (2 * window_size + 1), hidden_dim],
+                                            initializer=tf.contrib.layers.xavier_initializer(uniform=True,
+                                                                                             dtype=tf.float32))
 
-            with tf.variable_scope("w_z_scope", reuse=tf.AUTO_REUSE):
-                w_z = tf.get_variable(name="w_z", shape=[hidden_dim],
-                                      initializer=tf.random_uniform_initializer(dtype=tf.float32))
+                with tf.variable_scope("w_z_scope", reuse=tf.AUTO_REUSE):
+                    w_z = tf.get_variable(name="w_z", shape=[hidden_dim],
+                                          initializer=tf.random_uniform_initializer(dtype=tf.float32))
 
-            for j in xrange(L):
-                with tf.variable_scope("sketch_step_loop", reuse=tf.AUTO_REUSE):
-                    tensor_i = tf.squeeze(bs_split[i])
-                    preattention = activation(tf.matmul(tensor_i, W_hsz) + w_z)
-                    attention = tf.matmul(preattention, v)  # [batch_size, 1]
-                    attentions.append(attention)
+                for j in xrange(L):
+                    with tf.variable_scope("sketch_step_loop", reuse=tf.AUTO_REUSE):
+                        tensor_i = tf.squeeze(bs_split[i])
+                        preattention = activation(tf.matmul(tensor_i, W_hsz) + w_z)
+                        attention = tf.matmul(preattention, v)  # [batch_size, 1]
+                        attentions.append(attention)
 
-            attentions = tf.stack(attentions, axis=1)  # [batch_size, 1, L]
-            attentions = tf.squeeze(attentions) - cum_attention*discount_factor  # [batch_size, L]
-            constrained_weights = constrained_softmax(attentions, cum_attention, temper)  # [batch_size, L]
+                attentions = tf.stack(attentions, axis=1)  # [batch_size, 1, L]
+                attentions = tf.squeeze(attentions) - cum_attention*discount_factor  # [batch_size, L]
+                constrained_weights = constrained_softmax(attentions, cum_attention, temper)  # [batch_size, L]
 
-            cn = tf.reduce_sum(tensor*tf.expand_dims(constrained_weights, [2]), axis=1)  # [batch_size,
-            #  2*state_size*(2*window_size + 1)]
-            cn = tf.reshape(cn, [batch_size, 2*state_size*(2*window_size + 1)])  # [batch_size,
-            #  2*state_size*(2*window_size + 1)]
-            s = activation(tf.matmul(cn, W_hh) + w_h)  # [batch_size, state_size]
+                cn = tf.reduce_sum(tensor*tf.expand_dims(constrained_weights, [2]), axis=1)  # [batch_size,
+                #  2*state_size*(2*window_size + 1)]
+                cn = tf.reshape(cn, [batch_size, 2*state_size*(2*window_size + 1)])  # [batch_size,
+                #  2*state_size*(2*window_size + 1)]
+                s = activation(tf.matmul(cn, W_hh) + w_h)  # [batch_size, state_size]
 
-            s = tf.matmul(tf.expand_dims(constrained_weights, [2]), tf.expand_dims(s, [1]))  # [batch_size, L,
-            #  state_size]
+                s = tf.matmul(tf.expand_dims(constrained_weights, [2]), tf.expand_dims(s, [1]))  # [batch_size, L,
+                #  state_size]
 
-            return s, constrained_weights
+                return s, constrained_weights
 
         sketch = tf.zeros(shape=[batch_size, L, state_size], dtype=tf.float32)  # sketch tenzor
         cum_att = tf.zeros(shape=[batch_size, L])  # cumulative attention
@@ -271,14 +272,13 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
         sketches = []
         cum_attentions = []
 
-        with tf.variable_scope("sketch_loop", reuse=tf.AUTO_REUSE):
-            for i in xrange(sketches_num):
-                sketch_, cum_att_ = sketch_step(prepare_tensor(hidden_states, sketch, padding_hs_col), cum_att,
-                                                dim_hlayer, temperature)
-                sketch += sketch_
-                cum_att += cum_att_
-                sketches.append(sketch_)  # list of tensors with shape [batch_size, L, state_size]
-                cum_attentions.append(cum_att_)  # list of tensors with shape [batch_size, L]
+        for i in xrange(sketches_num):
+            sketch_, cum_att_ = sketch_step(prepare_tensor(hidden_states, sketch, padding_hs_col), cum_att,
+                                            dim_hlayer, temperature)
+            sketch += sketch_
+            cum_att += cum_att_
+            sketches.append(sketch_)  # list of tensors with shape [batch_size, L, state_size]
+            cum_attentions.append(cum_att_)  # list of tensors with shape [batch_size, L]
 
     return sketches, cum_attentions
 
