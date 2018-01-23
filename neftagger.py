@@ -346,6 +346,8 @@ class NEF():
         self.l1_scale = params['l1_scale']
         # self.class_weights = class_weights if class_weights is not None else [1. / self.labels_num] * self.labels_num
 
+        self.word_emb = utils.load_embeddings(self.embeddings, self.embeddings_dim, self.emb_format)
+
         self.path = 'Config:\nTask: NER\nNet configuration:\n\tLSTM: bi-LSTM; LSTM units: {0};\n\t\'' \
                     'Hidden layer dim: {1}; Activation Function: {2}\n' \
                     'Other parameters:\n\t' \
@@ -369,10 +371,13 @@ class NEF():
                                                                self.attention_discount_factor)
 
         tags = tag_vocab.w2i.keys()  # return_w2i.keys()
-        t_emb = np.zeros((len(tags), len(tags)))
+        t_emb_dict = dict()
+
         for i, tag in enumerate(tags):
-            t_emb[i][i] = 1.
-        self.tag_emb = t_emb
+            t_emb = np.zeros((len(tags)))
+            t_emb[i] = 1.
+            t_emb_dict[tag] = t_emb
+        self.tag_emb = t_emb_dict
 
         if self.activation_func == 'tanh':
             self.activation = tf.nn.tanh
@@ -459,7 +464,7 @@ class NEF():
         # gradients and update operation for training the model
         if self.mode == 'train':
             train_params = tf.trainable_variables()
-            print train_params
+
             gradients = tf.gradients(tf.reduce_mean(self.losses_reg, 0), train_params)  # batch normalization
             if self.max_gradient_norm > -1:
                 clipped_gradients, norm = tf.clip_by_global_norm(gradients, self.max_gradient_norm)
@@ -483,12 +488,11 @@ class NEF():
             lengs.append(len(s))
 
         x = np.zeros((self.batch_size, self.L, self.embeddings_dim))
-        y = np.zeros((self.batch_size, self.L, self.embeddings_dim))
-        word_emb = utils.load_embeddings(self.embeddings, self.embeddings_dim, self.emb_format)
+        y = np.zeros((self.batch_size, self.L, self.tag_emb_dim))
 
         for i, sent in enumerate(example):
             for j, z in enumerate(sent):
-                x[i, j] = word_emb[z[0]]  # words
+                x[i, j] = self.word_emb[z[0]]  # words
                 if mode == 'train':
                     y[i, j] = self.tag_emb[z[1]]  # tags
 
