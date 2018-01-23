@@ -1,5 +1,5 @@
-from collections import defaultdict
-from itertools import count
+# from collections import defaultdict
+# from itertools import count
 from collections import Counter
 import fasttext
 import numpy as np

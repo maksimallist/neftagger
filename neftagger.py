@@ -335,15 +335,14 @@ class NEF():
         if mode not in ['train', 'inf']:
             raise ValueError('Not implemented mode = {}'.format(mode))
 
-        sent_num = len(example)
-        assert sent_num <= self.batch_size
-
-        lengs = []
-        for s in example:
-            lengs.append(len(s))
+        # sent_num = len(example)
+        # assert sent_num <= self.batch_size
 
         x = np.zeros((self.batch_size, self.L, self.embeddings_dim))
         y = np.zeros((self.batch_size, self.L, self.tag_emb_dim))
+        lengs = np.zeros(self.batch_size)
+        for i, s in enumerate(example):
+            lengs[i] = len(s)
 
         for i, sent in enumerate(example):
             for j, z in enumerate(sent):

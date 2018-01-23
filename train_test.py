@@ -1,6 +1,6 @@
-from neftagger import NEF
 import numpy
 import tensorflow as tf
+from neftagger import NEF
 import time
 from os.path import join
 from utils import read_dataset, create_vocabulary
@@ -96,6 +96,7 @@ def train(generator, param, flags):
 
 def main(_):
     train(batch_generator, parameters, train_flag)
+    # train(parameters, train_flag)
 
 
 if __name__ == "__main__":
