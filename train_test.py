@@ -3,6 +3,7 @@ import tensorflow as tf
 import time
 from os.path import join
 from utils import read_dataset, create_vocabulary
+import numpy
 # from utils import accuracy, f1s_binary
 
 
