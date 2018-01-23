@@ -426,7 +426,7 @@ class NEF():
 
                 # TODO maybe input only sorted number of tags ?
                 # y_words_full = tf.one_hot(tf.squeeze(y_words), depth=self.labels_num, on_value=1.0, off_value=0.0)
-                cross_entropy = tf.nn.softmax_cross_entropy_with_logits(labels=word_label_score, logits=y_words)
+                cross_entropy = tf.nn.softmax_cross_entropy_with_logits(labels=y_words, logits=word_label_score)
                 return [word_preds, cross_entropy]
 
             # calculate prediction scores iteratively on "L" axis
