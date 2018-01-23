@@ -5,7 +5,7 @@ Tensorflow implementation of the neural easy-first-tagger model
 
 import numpy as np
 import tensorflow as tf
-from . import utils
+import utils
 
 
 # Input block (A_Block)
@@ -155,7 +155,7 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
 
 
 class NEF():
-    def __init__(self, params, tag_vocab):  # class_weights=None, word_vocab_len
+    def __init__(self, params, tags):  # class_weights=None, word_vocab_len
 
         config = tf.ConfigProto()
         config.gpu_options.per_process_gpu_memory_fraction = 0.8
@@ -225,9 +225,8 @@ class NEF():
                                                                self.attention_temperature,
                                                                self.attention_discount_factor)
 
-        tags = tag_vocab.w2i.keys()  # return_w2i.keys()
+        # tags = tag_vocab.w2i.keys()  # return_w2i.keys()
         t_emb_dict = dict()
-
         for i, tag in enumerate(tags):
             t_emb_vec = np.zeros((len(tags)))
             t_emb_vec[i] = 1.
@@ -328,7 +327,7 @@ class NEF():
             else:
                 self.update = self.optimizer.apply_gradients(zip(gradients, train_params))
 
-        self.saver = tf.train.Saver(tf.all_variables())
+        self.saver = tf.train.Saver(tf.global_variables())
 
     def tensorize_example(self, example, mode='train'):
 

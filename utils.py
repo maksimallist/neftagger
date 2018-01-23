@@ -15,7 +15,7 @@ def read_dataset(fname, maximum_sentence_length=-1, read_ordering=False, split=T
     tags = []
     orderings = []
 
-    for line in file(fname):
+    for line in open(fname, 'r'):
         if ordering is None and read_ordering:
             line = line.lstrip('#')
             line = line.strip().split(' ')
@@ -88,78 +88,86 @@ def load_embeddings(embedding_path, embedding_size, embedding_format):
     return embedding_dict
 
 
-class Vocab:
-    def __init__(self, w2i=None):
-        if w2i is None:
-            w2i = defaultdict(count(0).next)
-        self.w2i = dict(w2i)
-        self.i2w = {i: w for w, i in w2i.iteritems()}
-
-    @classmethod
-    def from_corpus(cls, corpus):
-        w2i = defaultdict(count(0).next)
-        for sent in corpus:
-            [w2i[word] for word in sent]
-        return Vocab(w2i)
-
-    def size(self): return len(self.w2i.keys())
-
-    def return_w2i(self):
-        return self.w2i
-
-    def return_i2w(self):
-        return self.i2w
-
-
-def create_vocabularies(corpora, word_cutoff=0, lower_case=False):
-    word_counter = Counter()
-    tag_counter = Counter()
-    word_counter['_UNK_'] = word_cutoff + 1
-
-    for corpus in corpora:
-        for s in corpus:
-            for w, t in s:
-                if lower_case:
-                    word_counter[w.lower()] += 1
-                else:
-                    word_counter[w] += 1
-                tag_counter[t] += 1
-
-    words = [w for w in word_counter if word_counter[w] > word_cutoff]
-    tags = [t for t in tag_counter]
-
-    word_vocabulary = Vocab.from_corpus([words])
-    tag_vocabulary = Vocab.from_corpus([tags])
-
-    print('Words: %d' % word_vocabulary.size())
-    print('Tags: %d' % tag_vocabulary.size())
-
-    return word_vocabulary, tag_vocabulary, word_counter
+# class Vocab:
+#     def __init__(self, w2i=None):
+#         if w2i is None:
+#             w2i = defaultdict()
+#         self.w2i = dict(w2i)
+#         self.i2w = {i: w for w, i in w2i.iteritems()}
+#
+#     @classmethod
+#     def from_corpus(cls, corpus):
+#         w2i = defaultdict()
+#         for sent in corpus:
+#             [w2i[word] for word in sent]
+#         return Vocab(w2i)
+#
+#     def size(self): return len(self.w2i.keys())
+#
+#     def return_w2i(self):
+#         return self.w2i
+#
+#     def return_i2w(self):
+#         return self.i2w
 
 
+# def create_vocabularies(corpora, word_cutoff=0, lower_case=False):
+#     word_counter = Counter()
+#     tag_counter = Counter()
+#     word_counter['_UNK_'] = word_cutoff + 1
+#
+#     for corpus in corpora:
+#         for s in corpus:
+#             for w, t in s:
+#                 if lower_case:
+#                     word_counter[w.lower()] += 1
+#                 else:
+#                     word_counter[w] += 1
+#                 tag_counter[t] += 1
+#
+#     words = [w for w in word_counter if word_counter[w] > word_cutoff]
+#     tags = [t for t in tag_counter]
+#
+#     word_vocabulary = Vocab.from_corpus([words])
+#     tag_vocabulary = Vocab.from_corpus([tags])
+#
+#     print('Words: %d' % word_vocabulary.size())
+#     print('Tags: %d' % tag_vocabulary.size())
+#
+#     return word_vocabulary, tag_vocabulary, word_counter
+#
+#
 def create_vocabulary(corpora, word_cutoff=0, lower_case=False):
     word_counter = Counter()
     tag_counter = Counter()
     word_counter['_UNK_'] = word_cutoff + 1
+    tags_ = list()
+    words_ = list()
 
     for corpus in corpora:
         for w, t in corpus:
             if lower_case:
                 word_counter[w.lower()] += 1
+                if w not in words_:
+                    words_.append(w)
             else:
                 word_counter[w] += 1
             tag_counter[t] += 1
+            if t not in tags_:
+                tags_.append(t)
 
     words = [w for w in word_counter if word_counter[w] > word_cutoff]
     tags = [t for t in tag_counter]
 
-    word_vocabulary = Vocab.from_corpus([words])
-    tag_vocabulary = Vocab.from_corpus([tags])
+    # word_vocabulary = Vocab.from_corpus([words])
+    # tag_vocabulary = Vocab.from_corpus([tags])
 
-    print('Words: %d' % word_vocabulary.size())
-    print('Tags: %d' % tag_vocabulary.size())
+    # print('Words: %d' % word_vocabulary.size())
+    # print('Tags: %d' % tag_vocabulary.size())
+    print('Words: %d' % len(words_))
+    print('Tags: %d' % len(tags_))
 
-    return word_vocabulary, tag_vocabulary, word_counter
+    return words_, tags_, word_counter
 
 
 def accuracy(y_i, predictions):
@@ -295,7 +303,7 @@ def attention_block_with_csoftmax(hidden_states, state_size, window_size, dim_hl
             w_z = tf.get_variable(name="w_z", shape=[hidden_dim],
                                   initializer=tf.random_uniform_initializer(dtype=tf.float32))
 
-            for j in xrange(L):
+            for j in range(L):
                 tensor = tf.squeeze(bs_split[i])
                 preattention = activation(tf.matmul(tensor, W_hsz) + w_z)
                 attention = tf.matmul(preattention, v)  # [batch_size, 1]
@@ -332,7 +340,7 @@ def attention_block_with_csoftmax(hidden_states, state_size, window_size, dim_hl
             hs = conv_r(hs, window_size)  # [batch_size, L, 2*state*(2*window_size + 1)]
             return hs
 
-        for i in xrange(sketches_num):
+        for i in range(sketches_num):
             sketch_, cum_att_ = sketch_step(prepare_tensor(hidden_states, sketch, padding_hs_col), cum_att, dim_hlayer)
             sketch += sketch_
             cum_att += cum_att_

@@ -1,9 +1,9 @@
-from .neftagger import NEF
+from neftagger import NEF
 import numpy
 import tensorflow as tf
 import time
 from os.path import join
-from .utils import read_dataset, create_vocabulary
+from utils import read_dataset, create_vocabulary
 # from utils import accuracy, f1s_binary
 
 
@@ -83,7 +83,8 @@ def train(generator, param, flags):
                 # train_predictions.extend(pred_labels)
                 # train_true.extend(data[1])
             # print '[accuracy = {}]\n'.format()
-            print('[ Epoch {0} end. Time: {1} ]'.format(e, time.time() - start))
+                print('[ Epoch {0}; Loss: {1} ]'.format(e, losses))
+            print('[ Epoch {0} end; Time: {1} ]'.format(e, time.time() - start))
             if e % flags['checkpoint_freq'] == 0:
                 model.save(sess, flags['checkpoint_dir'])
 
