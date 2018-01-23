@@ -164,7 +164,7 @@ def create_vocabulary(corpora, word_cutoff=0, lower_case=False):
 
     # print('Words: %d' % word_vocabulary.size())
     # print('Tags: %d' % tag_vocabulary.size())
-    print('Words: %d' % len(words_))
+    print('Words: %d' % len(word_counter.keys()))
     print('Tags: %d' % len(tags_))
 
     return words_, tags_, word_counter

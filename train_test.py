@@ -11,7 +11,7 @@ from utils import read_dataset, create_vocabulary
 parameters = dict()
 parameters['learning_rate'] = 0.001  # Learning rate.
 parameters['optimizer'] = "adam"  # Optimizer [sgd, adam, adagrad, adadelta, momentum]
-parameters['batch_size'] = 200  # Batch size to use during training.
+parameters['batch_size'] = 100  # Batch size to use during training.
 parameters['maximum_L'] = 58  # ??? # maximum length of sequences
 parameters['activation'] = 'tanh'  # activation function for dense layers in net
 parameters['embeddings'] = '../neural-easy-first/embeddings/russian/ft_0.8.3_nltk_yalen_sg_300.bin'  # path to
@@ -75,10 +75,11 @@ def train(generator, param, flags):
         # start learning
         start_learning = time.time()
         for e in range(flags['epochs']):
-            # train_predictions = []
+            gen = generator(train_data, param['batch_size'])
+            # train_p6redictions = []
             # train_true = []
             start = time.time()
-            for data in generator(train_data, param['batch_size']):
+            for data in gen:
                 pred_labels, losses = model.train_op(data, sess)
                 # train_predictions.extend(pred_labels)
                 # train_true.extend(data[1])

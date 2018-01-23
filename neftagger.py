@@ -319,7 +319,8 @@ class NEF():
         if self.mode == 'train':
             train_params = tf.trainable_variables()
 
-            gradients = tf.gradients(tf.reduce_mean(self.losses_reg, 0), train_params)  # batch normalization
+            self.losses_reg = tf.reduce_mean(self.losses_reg, 0)
+            gradients = tf.gradients(self.losses_reg, train_params)  # batch normalization
             if self.max_gradient_norm > -1:
                 clipped_gradients, norm = tf.clip_by_global_norm(gradients, self.max_gradient_norm)
                 self.update = self.optimizer.apply_gradients(zip(clipped_gradients, train_params))
