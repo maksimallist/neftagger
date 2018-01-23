@@ -278,7 +278,7 @@ class NEF():
 
                 # TODO maybe input only sorted number of tags ?
                 # y_words_full = tf.one_hot(tf.squeeze(y_words), depth=self.labels_num, on_value=1.0, off_value=0.0)
-                cross_entropy = tf.nn.softmax_cross_entropy_with_logits(labels=word_label_score, logits=y_words)
+                cross_entropy = tf.nn.softmax_cross_entropy_with_logits(labels=y_words, logits=word_label_score)
                 return [word_preds, cross_entropy]
 
             # calculate prediction scores iteratively on "L" axis
@@ -295,22 +295,23 @@ class NEF():
             self.losses_reg = tf.reduce_mean(tf.transpose(self.losses, [1, 0]), 1)
 
         # regularization
-        W_hh = tf.get_variable(name='W_hh', shape=[2 * state_size * (2 * self.window_size + 1), state_size])
-        if self.l2_scale > 0:
-            weights_list = [W_hh, W_out]  # word embeddings not included
-            l2_loss = tf.contrib.layers.apply_regularization(
-                tf.contrib.layers.l2_regularizer(self.l2_scale), weights_list=weights_list)
-            self.losses_reg += l2_loss
-        if self.l1_scale > 0:
-            weights_list = [W_hh, W_out]
-            l1_loss = tf.contrib.layers.apply_regularization(
-                tf.contrib.layers.l1_regularizer(self.l1_scale), weights_list=weights_list)
-            self.losses_reg += l1_loss
+        with tf.variable_scope('sketch', reuse=tf.AUTO_REUSE):
+            W_hh = tf.get_variable(name='W_hh', shape=[2 * state_size * (2 * self.window_size + 1), state_size])
+            if self.l2_scale > 0:
+                weights_list = [W_hh, W_out]  # word embeddings not included
+                l2_loss = tf.contrib.layers.apply_regularization(
+                    tf.contrib.layers.l2_regularizer(self.l2_scale), weights_list=weights_list)
+                self.losses_reg += l2_loss
+            if self.l1_scale > 0:
+                weights_list = [W_hh, W_out]
+                l1_loss = tf.contrib.layers.apply_regularization(
+                    tf.contrib.layers.l1_regularizer(self.l1_scale), weights_list=weights_list)
+                self.losses_reg += l1_loss
 
         # gradients and update operation for training the model
         if self.mode == 'train':
             train_params = tf.trainable_variables()
-            print train_params
+
             gradients = tf.gradients(tf.reduce_mean(self.losses_reg, 0), train_params)  # batch normalization
             if self.max_gradient_norm > -1:
                 clipped_gradients, norm = tf.clip_by_global_norm(gradients, self.max_gradient_norm)
