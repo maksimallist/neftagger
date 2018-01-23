@@ -5,7 +5,7 @@ Tensorflow implementation of the neural easy-first-tagger model
 
 import numpy as np
 import tensorflow as tf
-import utils
+from . import utils
 
 
 # Input block (A_Block)
@@ -143,7 +143,7 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
     sketches = []
     cum_attentions = []
 
-    for i in xrange(sketches_num):
+    for i in range(sketches_num):
         sketch_, cum_att_ = sketch_step(prepare_tensor(hidden_states, sketch, padding_hs_col), cum_att,
                                         temperature)
         sketch += sketch_
@@ -156,6 +156,9 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
 
 class NEF():
     def __init__(self, params, tag_vocab):  # class_weights=None, word_vocab_len
+
+        config = tf.ConfigProto()
+        config.gpu_options.per_process_gpu_memory_fraction = 0.8
 
         self.L = params['maximum_L']
         self.labels_num = params['labels_num']
@@ -378,7 +381,7 @@ class NEF():
     def load(self, sess, path):
 
         if tf.gfile.Exists(path):
-            print "[ Reading model parameters from {} ]".format(path)
+            print("[ Reading model parameters from {} ]".format(path))
             self.saver.restore(sess, path)
         else:
             raise ValueError('No checkpoint in path {}'.format(path))
