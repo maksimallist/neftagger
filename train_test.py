@@ -1,10 +1,10 @@
-import numpy
+import numpy as np
 import tensorflow as tf
 from neftagger import NEF
 import time
 from os.path import join
 from utils import read_dataset, create_vocabulary
-# from utils import accuracy, f1s_binary
+from utils import accuracy, f1s_binary
 
 
 # net parameters
@@ -52,6 +52,16 @@ def batch_generator(sentences, batch_size):
         yield sentences[i:i+batch_size]
 
 
+def refactor_data(example, tags, shape):
+    n = np.zeros((shape[0], shape[1]))
+
+    for i, s in enumerate(example):
+        for j, z in enumerate(s):
+            n[i, j] = int(tags.index(z[1]))
+
+    return n
+
+
 def train(generator, param, flags):
     # prepare dataset in format:
     # data = [[(word1, tag1), (word2, tag2), ...], [(...),(...)], ...]
@@ -76,15 +86,28 @@ def train(generator, param, flags):
         start_learning = time.time()
         for e in range(flags['epochs']):
             gen = generator(train_data, param['batch_size'])
-            # train_p6redictions = []
-            # train_true = []
+            train_predictions = []
+            train_true = []
             start = time.time()
             for data in gen:
                 pred_labels, losses = model.train_op(data, sess)
-                # train_predictions.extend(pred_labels)
-                # train_true.extend(data[1])
-            # print '[accuracy = {}]\n'.format()
+                train_predictions.extend(pred_labels)
+
+                y = refactor_data(data, tag_vocabulary, [param['batch_size'], param['maximum_L']])
+                train_true.extend(y)
                 print('[ Epoch {0}; Loss: {1} ]'.format(e, losses))
+                # print(pred_labels.shape)
+                # print(y.shape)
+                # print(pred_labels, '\n')
+                # print(y)
+
+            acc = accuracy(train_true, train_predictions)
+            print('[accuracy = {}]\n'.format(acc))
+
+            f1_nof1, f1_nof2 = f1s_binary(train_true, train_predictions)
+            print('[ Non official f1 (1): {} ]\n'.format(f1_nof1))
+            print('[ Non official f1 (2): {} ]'.format(f1_nof2))
+
             print('[ Epoch {0} end; Time: {1} ]'.format(e, time.time() - start))
             if e % flags['checkpoint_freq'] == 0:
                 model.save(sess, flags['checkpoint_dir'])

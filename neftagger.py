@@ -295,6 +295,7 @@ class NEF():
                                     dtype=[tf.int64, tf.float32])  # elems are unpacked along dim 0 -> L
 
             self.pred_labels = scores_pred[0]
+            self.pred_labels = tf.transpose(self.pred_labels, [1, 0])
             self.losses = scores_pred[1]
 
             # masked, batch_size x 1 (regularization like dropout but mask)
