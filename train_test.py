@@ -113,7 +113,7 @@ def train(generator, param, flags):
             if e % flags['checkpoint_freq'] == 0:
                 model.save(sess, flags['checkpoint_dir'])
 
-        print('[ End. Global Time: {} ]'.format(time.time() - start_learning))
+        print('[ End. Global Time: {} ]\n'.format(time.time() - start_learning))
 
     tf.reset_default_graph()
 
@@ -122,7 +122,7 @@ def train(generator, param, flags):
 
 def test(generator, param, flags, checkpoint):
 
-    print('[ Start testing model from checkpoint: {} ]'.format(checkpoint))
+    print('Start testing model from checkpoint: {} '.format(checkpoint))
 
     test_data = read_dataset(join(flags['data_dir'], 'russian_test.txt'),
                              param['maximum_L'], split=False)
@@ -137,7 +137,7 @@ def test(generator, param, flags, checkpoint):
         print(model.path)
 
         model.load(sess, checkpoint)
-        print('[ model was restored ... ]'.format(checkpoint))
+        print('[ model was restored ... ]\n'.format(checkpoint))
         sess.run(tf.global_variables_initializer())
 
         # start testing
@@ -155,8 +155,8 @@ def test(generator, param, flags, checkpoint):
         print('[accuracy = {}]\n'.format(acc))
 
         f1_nof1, f1_nof2 = f1s_binary(test_true, test_predictions)
-        print('[ Non official f1 (1): {} ]\n'.format(f1_nof1))
-        print('[ Non official f1 (2): {} ]\n'.format(f1_nof2))
+        print('[ Non official f1 (1): {} ]'.format(f1_nof1))
+        print('[ Non official f1 (2): {} ]'.format(f1_nof2))
 
     print('[ End of Testing. ]')
 
