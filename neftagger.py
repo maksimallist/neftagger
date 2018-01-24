@@ -203,7 +203,7 @@ class NEF():
 
         self.word_emb = utils.load_embeddings(self.embeddings, self.embeddings_dim, self.emb_format)
 
-        self.path = 'Config:\nTask: NER\nNet configuration:\n\tLSTM: bi-LSTM; LSTM units: {0};\n\t\'' \
+        self.path = 'Config:\nTask: NER\nNet configuration:\n\tLSTM: bi-LSTM; LSTM units: {0};\n\t\' '\
                     'Hidden layer dim: {1}; Activation Function: {2}\n' \
                     'Other parameters:\n\t' \
                     'Number of lables: {3};\n\tLanguage: Russian;\n\tEmbeddings dimension: {4};\n\t' \

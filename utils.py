@@ -2,7 +2,6 @@ from collections import Counter
 import fasttext
 import numpy as np
 import collections
-import tensorflow as tf
 
 
 def read_dataset(fname, maximum_sentence_length=-1, read_ordering=False, split=True):
