@@ -36,9 +36,9 @@ parameters['mode'] = 'train'
 train_flag = dict()
 train_flag['data_dir'] = '../neural-easy-first/ner/data/russian'  # Data directory.
 train_flag['sketch_dir'] = '../neural-easy-first/ner/sketches/russian'  # Directory where sketch dumps are stored
-train_flag['checkpoint_dir'] = './checkpoints'  # Model directory
-train_flag['epochs'] = 50  # training epochs
-train_flag['checkpoint_freq'] = 50  # save model every x epochs
+train_flag['checkpoint_dir'] = './checkpoints/'  # Model directory
+train_flag['epochs'] = 2  # training epochs
+train_flag['checkpoint_freq'] = 2  # save model every x epochs
 train_flag['restore'] = False  # restoring last session from checkpoint
 train_flag['interactive'] = False  # interactive mode
 train_flag['track_sketches'] = False  # keep track of the sketches during learning
@@ -63,13 +63,13 @@ def refactor_data(example, tags, shape):
 
 
 def train(generator, param, flags):
+
     # prepare dataset in format:
     # data = [[(word1, tag1), (word2, tag2), ...], [(...),(...)], ...]
     # list of sentences; sentence is a list if tuples with word and tag
     train_data = read_dataset(join(flags['data_dir'], 'russian_train.txt'),
                               param['maximum_L'], split=False)
-    # test_data = read_dataset(join(flags['data_dir'], 'russian_test.txt'),
-    #                          param['maximum_L'], split=False)
+
     # dev_data = read_dataset(join(flags['data_dir'], 'russian_dev.txt'),
     #                         param['maximum_L'], split=False)
 
@@ -78,6 +78,7 @@ def train(generator, param, flags):
     with tf.Session() as sess:
         # create model
         model = NEF(param, tag_vocabulary)
+
         # print config
         print(model.path)
         sess.run(tf.global_variables_initializer())
@@ -108,18 +109,63 @@ def train(generator, param, flags):
             print('[ Non official f1 (1): {} ]\n'.format(f1_nof1))
             print('[ Non official f1 (2): {} ]'.format(f1_nof2))
 
-            print('[ Epoch {0} end; Time: {1} ]'.format(e, time.time() - start))
+            print('[ Epoch {0} end; Time: {1} ]'.format(e+1, time.time() - start))
             if e % flags['checkpoint_freq'] == 0:
                 model.save(sess, flags['checkpoint_dir'])
 
         print('[ End. Global Time: {} ]'.format(time.time() - start_learning))
+
+    tf.reset_default_graph()
+
+    return None
+
+
+def test(generator, param, flags, checkpoint):
+
+    print('[ Start testing model from checkpoint: {} ]'.format(checkpoint))
+
+    test_data = read_dataset(join(flags['data_dir'], 'russian_test.txt'),
+                             param['maximum_L'], split=False)
+
+    _, tag_vocabulary, _ = create_vocabulary(test_data)
+
+    with tf.Session() as sess:
+        # create model
+        model = NEF(param, tag_vocabulary)
+
+        # print config
+        print(model.path)
+
+        model.load(sess, checkpoint)
+        print('[ model was restored ... ]'.format(checkpoint))
+        sess.run(tf.global_variables_initializer())
+
+        # start testing
+        gen = generator(test_data, param['batch_size'])
+        test_predictions = []
+        test_true = []
+        for data in gen:
+            pred_labels = model.inference_op(data, sess)
+            test_predictions.extend(pred_labels)
+
+            y = refactor_data(data, tag_vocabulary, [param['batch_size'], param['maximum_L']])
+            test_true.extend(y)
+
+        acc = accuracy(test_true, test_predictions)
+        print('[accuracy = {}]\n'.format(acc))
+
+        f1_nof1, f1_nof2 = f1s_binary(test_true, test_predictions)
+        print('[ Non official f1 (1): {} ]\n'.format(f1_nof1))
+        print('[ Non official f1 (2): {} ]\n'.format(f1_nof2))
+
+    print('[ End of Testing. ]')
 
     return None
 
 
 def main(_):
     train(batch_generator, parameters, train_flag)
-    # train(parameters, train_flag)
+    test(batch_generator, parameters, train_flag, train_flag['checkpoint_dir'])
 
 
 if __name__ == "__main__":
