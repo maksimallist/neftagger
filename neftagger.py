@@ -155,7 +155,7 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
 
 
 class NEF():
-    def __init__(self, params, tags):  # class_weights=None, word_vocab_len
+    def __init__(self, params, t2i, i2t):  # class_weights=None, word_vocab_len
 
         config = tf.ConfigProto()
         config.gpu_options.per_process_gpu_memory_fraction = 0.8
@@ -225,13 +225,7 @@ class NEF():
                                                                self.attention_temperature,
                                                                self.attention_discount_factor)
 
-        # tags = tag_vocab.w2i.keys()  # return_w2i.keys()
-        t_emb_dict = dict()
-        for i, tag in enumerate(tags):
-            t_emb_vec = np.zeros((len(tags)))
-            t_emb_vec[i] = 1.
-            t_emb_dict[tag] = t_emb_vec
-        self.tag_emb = t_emb_dict
+        self.tag_emb = t2i
 
         if self.activation_func == 'tanh':
             self.activation = tf.nn.tanh

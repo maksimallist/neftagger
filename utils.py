@@ -72,7 +72,7 @@ def load_embeddings(embedding_path, embedding_size, embedding_format):
             for i, line in enumerate(f.readlines()):
                 if skip_first and i == 0:
                     continue
-                splits = line.split()
+                splits = line.split(' ')
                 assert len(splits) == embedding_size + 1
                 word = splits[0]
                 embedding = np.array([float(s) for s in splits[1:]])
@@ -85,11 +85,45 @@ def load_embeddings(embedding_path, embedding_size, embedding_format):
     return embedding_dict
 
 
+# def create_vocabulary(corpora, word_cutoff=0, lower_case=False):
+#     word_counter = Counter()
+#     tag_counter = Counter()
+#     word_counter['_UNK_'] = word_cutoff + 1
+#     tags_ = list()
+#     words_ = list()
+#
+#     for corpus in corpora:
+#         for w, t in corpus:
+#             if lower_case:
+#                 word_counter[w.lower()] += 1
+#                 if w not in words_:
+#                     words_.append(w)
+#             else:
+#                 word_counter[w] += 1
+#             tag_counter[t] += 1
+#             if t not in tags_:
+#                 tags_.append(t)
+#
+#     words = [w for w in word_counter if word_counter[w] > word_cutoff]
+#     tags = [t for t in tag_counter]
+#
+#     # word_vocabulary = Vocab.from_corpus([words])
+#     # tag_vocabulary = Vocab.from_corpus([tags])
+#
+#     # print('Words: %d' % word_vocabulary.size())
+#     # print('Tags: %d' % tag_vocabulary.size())
+#     print('Words: %d' % len(word_counter.keys()))
+#     print('Tags: %d' % len(tags_))
+#
+#     return words_, tags_, word_counter
+
 def create_vocabulary(corpora, word_cutoff=0, lower_case=False):
     word_counter = Counter()
     tag_counter = Counter()
     word_counter['_UNK_'] = word_cutoff + 1
-    tags_ = list()
+    index = dict()
+    tags_ = dict()
+    k = 0
     words_ = list()
 
     for corpus in corpora:
@@ -101,8 +135,10 @@ def create_vocabulary(corpora, word_cutoff=0, lower_case=False):
             else:
                 word_counter[w] += 1
             tag_counter[t] += 1
-            if t not in tags_:
-                tags_.append(t)
+            if t not in tags_.keys():
+                tags_[t] = k
+                index[k] = t
+                k += 1
 
     words = [w for w in word_counter if word_counter[w] > word_cutoff]
     tags = [t for t in tag_counter]
@@ -115,7 +151,7 @@ def create_vocabulary(corpora, word_cutoff=0, lower_case=False):
     print('Words: %d' % len(word_counter.keys()))
     print('Tags: %d' % len(tags_))
 
-    return words_, tags_, word_counter
+    return tags_, index
 
 
 def accuracy(y_i, predictions):
