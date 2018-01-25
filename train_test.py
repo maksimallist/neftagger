@@ -45,7 +45,6 @@ else:
 parameters['learning_rate'] = 0.001  # Learning rate.
 parameters['optimizer'] = "adam"  # Optimizer [sgd, adam, adagrad, adadelta, momentum]
 parameters['batch_size'] = 100  # Batch size to use during training.
-parameters['maximum_L'] = 100  # ??? # maximum length of sequences
 parameters['activation'] = 'tanh'  # activation function for dense layers in net
 parameters['sketches_num'] = 5  # number of sketches
 parameters['lstm_units'] = 20  # number of LSTM-RNN encoder units
@@ -58,9 +57,8 @@ parameters['drop_prob_sketch'] = 1  # keep probability for dropout during sketch
 parameters["l2_scale"] = 0  # "L2 regularization constant"
 parameters["l1_scale"] = 0  # "L1 regularization constant"
 parameters["max_gradient_norm"] = -1  # "maximum gradient norm for clipping (-1: no clipping)"
-
-
-
+# maybe parametrization ?
+parameters['maximum_L'] = 124  # maximum length of sequences
 parameters['labels_num'] = 7  # number of labels
 parameters['tag_emb_dim'] = 7  # number of labels
 
@@ -102,6 +100,7 @@ def train(generator, param, flags):
     # prepare dataset in format:
     # data = [[(word1, tag1), (word2, tag2), ...], [(...),(...)], ...]
     # list of sentences; sentence is a list if tuples with word and tag
+    # TODO: rename path and make available "valid.txt"
     train_data = read_dataset(join(flags['data_dir'], 'russian_train.txt'),
                               param['maximum_L'], split=False)
 
