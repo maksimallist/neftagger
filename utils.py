@@ -64,7 +64,7 @@ def load_embeddings(embedding_path, embedding_size, embedding_format):
     """
     print("Loading word embeddings from {}...".format(embedding_path))
 
-    if embedding_format == 'vec':
+    if embedding_format in ['vec', 'txt']:
         default_embedding = np.zeros(embedding_size)
         embedding_dict = collections.defaultdict(lambda: default_embedding)
         skip_first = embedding_format == "vec"
