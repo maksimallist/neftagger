@@ -5,7 +5,7 @@ from neftagger import NEF
 import time
 from os.path import join
 from utils import read_dataset, create_vocabulary
-from utils import accuracy, f1s_binary
+from utils import accuracy, f1s_binary, precision_recall_f1
 import sys
 
 name = sys.argv[1]
@@ -64,9 +64,9 @@ parameters['mode'] = 'train'
 
 train_flag = dict()
 train_flag['data_dir'] = './ner/data/{}/'.format(language)  # Data directory.
-train_flag['sketch_dir'] = './ner/sketches/{0}/{1}'.format(language, name)  # Directory where sketch dumps
+train_flag['sketch_dir'] = './ner/sketches/{0}/{1}/'.format(language, name)  # Directory where sketch dumps
 #  are stored
-train_flag['checkpoint_dir'] = './ner/checkpoints/{0}/{1}'.format(language, name)  # Model directory
+train_flag['checkpoint_dir'] = './ner/checkpoints/{0}/{1}/'.format(language, name)  # Model directory
 train_flag['epochs'] = 20  # training epochs
 train_flag['checkpoint_freq'] = 5  # save model every x epochs
 train_flag['restore'] = False  # restoring last session from checkpoint
@@ -74,7 +74,7 @@ train_flag['interactive'] = False  # interactive mode
 train_flag['track_sketches'] = False  # keep track of the sketches during learning
 train_flag['sketch_sentence_id'] = 434  # sentence id of sample (dev) to keep track of during sketching
 train_flag['train'] = True  # training model
-train_flag['prediction_path'] = './ner/predictions/{0}/{1}'.format(language, name)
+train_flag['prediction_path'] = './ner/predictions/{0}/{1}/'.format(language, name)
 
 
 def batch_generator(sentences, batch_size):
@@ -168,6 +168,8 @@ def train(generator, param, flags):
             print('[ Non official f1 (2): {} ]\n'.format(f1_nof2))
 
             if e % flags['checkpoint_freq'] == 0:
+                if not os.path.isdir(flags['checkpoint_dir']):
+                    os.makedirs(flags['checkpoint_dir'])
                 model.save(sess, flags['checkpoint_dir'])
 
         print('[ End. Global Time: {} ]\n'.format(time.time() - start_learning))
