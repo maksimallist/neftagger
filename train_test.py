@@ -6,25 +6,51 @@ import time
 from os.path import join
 from utils import read_dataset, create_vocabulary
 from utils import accuracy, f1s_binary
+import sys
 
+
+language = sys.argv[0]
+emb_dim = sys.argv[1]
 
 # net parameters
 parameters = dict()
+
+if language == 'english':
+    if emb_dim == 300:
+        parameters['embeddings'] = './embeddings/{}/glove.840B.300d.txt'.format(language)  # path to
+        #  source language embeddings.
+        parameters['embeddings_dim'] = 300  # 100 # dimensionality of embeddings
+        parameters['emb_format'] = 'txt'  # binary model or vec file
+    else:
+        raise ValueError('There are no embeddings with dimension {0}'
+                         ' in the directory: {1}'.format(emb_dim, './embeddings/'+language+'/'))
+elif language == 'russian':
+    if emb_dim == 300:
+        parameters['embeddings'] = './embeddings/{}/ft_0.8.3_nltk_yalen_sg_300.bin'.format(language)  # path to
+        #  source language embeddings.
+        parameters['embeddings_dim'] = 300  # 100 # dimensionality of embeddings
+        parameters['emb_format'] = 'bin'  # binary model or vec file
+    elif emb_dim == 100:
+        parameters['embeddings'] = './embeddings/{}/embeddings_lenta_100.vec'.format(language)  # path to
+        #  source language embeddings.
+        parameters['embeddings_dim'] = 100  # 100 # dimensionality of embeddings
+        parameters['emb_format'] = 'vec'
+    else:
+        raise ValueError('There are no embeddings with dimension {0}'
+                         ' in the directory: {1}'.format(emb_dim, './embeddings/' + language + '/'))
+else:
+    raise ValueError('Sorry, {} language is not implemented yet.'.format(language))
+
+
 parameters['learning_rate'] = 0.001  # Learning rate.
 parameters['optimizer'] = "adam"  # Optimizer [sgd, adam, adagrad, adadelta, momentum]
 parameters['batch_size'] = 100  # Batch size to use during training.
 parameters['maximum_L'] = 100  # ??? # maximum length of sequences
 parameters['activation'] = 'tanh'  # activation function for dense layers in net
-parameters['embeddings'] = '../neural-easy-first/embeddings/russian/ft_0.8.3_nltk_yalen_sg_300.bin'  # path to
-#  source language embeddings.
-parameters['embeddings_dim'] = 300  # 100 # dimensionality of embeddings
-parameters['emb_format'] = 'bin'  # binary model or vec file
-parameters['labels_num'] = 7  # number of labels
-parameters['tag_emb_dim'] = 7  # number of labels
 parameters['sketches_num'] = 5  # number of sketches
+parameters['lstm_units'] = 20  # number of LSTM-RNN encoder units
 parameters['dim_hlayer'] = 20  # dimensionality of hidden layer
 parameters['window'] = 2  # context size
-parameters['lstm_units'] = 20  # number of LSTM-RNN encoder units
 parameters['attention_discount_factor'] = 0.0  # Attention discount factor
 parameters['attention_temperature'] = 1.0  # Attention temperature
 parameters['drop_prob'] = 0.3  # keep probability for dropout during training (1: no dropout)
@@ -32,12 +58,19 @@ parameters['drop_prob_sketch'] = 1  # keep probability for dropout during sketch
 parameters["l2_scale"] = 0  # "L2 regularization constant"
 parameters["l1_scale"] = 0  # "L1 regularization constant"
 parameters["max_gradient_norm"] = -1  # "maximum gradient norm for clipping (-1: no clipping)"
-parameters['mode'] = 'train'
+
+
+
+parameters['labels_num'] = 7  # number of labels
+parameters['tag_emb_dim'] = 7  # number of labels
+
+
+# parameters['mode'] = 'train'
 
 train_flag = dict()
-train_flag['data_dir'] = '../neural-easy-first/ner/data/russian'  # Data directory.
-train_flag['sketch_dir'] = '../neural-easy-first/ner/sketches/russian'  # Directory where sketch dumps are stored
-train_flag['checkpoint_dir'] = './checkpoints/'  # Model directory
+train_flag['data_dir'] = '../neural-easy-first/ner/data/{}'.format(language)  # Data directory.
+train_flag['sketch_dir'] = '../neural-easy-first/ner/sketches/{}'.format(language)  # Directory where sketch dumps are stored
+train_flag['checkpoint_dir'] = './checkpoints/{}'.format(language)  # Model directory
 train_flag['epochs'] = 20  # training epochs
 train_flag['checkpoint_freq'] = 5  # save model every x epochs
 train_flag['restore'] = False  # restoring last session from checkpoint
