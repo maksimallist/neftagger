@@ -266,7 +266,7 @@ class NEF():
                 bw_cell = tf.nn.rnn_cell.DropoutWrapper(bw_cell, input_keep_prob=1, output_keep_prob=self.drop)
 
                 outputs, final_state = tf.nn.bidirectional_dynamic_rnn(fw_cell, bw_cell, emb_drop,
-                                                                       sequence_length=self.lenghs,
+                                                                       sequence_length=None,
                                                                        dtype=tf.float32, time_major=False)
                 outputs = tf.concat(outputs, 2)
                 state_size = 2 * self.lstm_units  # concat of fw and bw lstm output
@@ -361,7 +361,9 @@ class NEF():
 
         x = np.zeros((self.batch_size, self.L, self.embeddings_dim))
         y = np.zeros((self.batch_size, self.L, self.tag_emb_dim))
-        lengh = np.ones((self.batch_size,))*self.L
+        lengs = np.zeros(self.batch_size)
+        for i, s in enumerate(example):
+            lengs[i] = len(s)
 
         for i, sent in enumerate(example):
             for j, z in enumerate(sent):
@@ -369,7 +371,7 @@ class NEF():
                 if mode == 'train':
                     y[i, j] = self.tag_emb[z[1]]  # tags
 
-        return x, y, lengh
+        return x, y, lengs
 
     def train_op(self, example, sess):
         x, y, length = self.tensorize_example(example)
