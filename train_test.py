@@ -15,7 +15,7 @@ parameters['maximum_L'] = 58  # ??? # maximum length of sequences
 parameters['activation'] = 'tanh'  # activation function for dense layers in net
 parameters['embeddings'] = '../neural-easy-first/embeddings/russian/ft_0.8.3_nltk_yalen_sg_300.bin'  # path to
 #  source language embeddings.
-parameters['embeddings_dim'] = 300  # 100 # dimensionality of embeddings
+parameters['embeddings_dim'] = 100  # 100 # dimensionality of embeddings
 parameters['emb_format'] = 'bin'  # binary model or vec file
 parameters['labels_num'] = 7  # number of labels
 parameters['tag_emb_dim'] = 7  # number of labels

@@ -8,152 +8,7 @@ import tensorflow as tf
 import utils
 
 
-# Input block (A_Block)
-def input_block(x, seq_lens, drop, lstm_units):
-
-    with tf.name_scope("embedding"):
-        # dropout on embeddings
-        emb_drop = tf.nn.dropout(x, drop)
-
-    with tf.name_scope("Input"):
-        fw_cell = tf.nn.rnn_cell.LSTMCell(num_units=lstm_units, state_is_tuple=True)
-
-        with tf.name_scope("bi-lstm"):
-            bw_cell = tf.nn.rnn_cell.LSTMCell(num_units=lstm_units, state_is_tuple=True)
-
-            # dropout on lstm
-            # TODO make params, input is already dropped out
-            fw_cell = tf.nn.rnn_cell.DropoutWrapper(fw_cell, input_keep_prob=1, output_keep_prob=drop)
-            bw_cell = tf.nn.rnn_cell.DropoutWrapper(bw_cell, input_keep_prob=1, output_keep_prob=drop)
-
-            outputs, final_state = tf.nn.bidirectional_dynamic_rnn(fw_cell, bw_cell, emb_drop, sequence_length=seq_lens,
-                                                                   dtype=tf.float32, time_major=False)
-            outputs = tf.concat(outputs, 2)
-            state_size = 2 * lstm_units  # concat of fw and bw lstm output
-
-    return outputs, final_state, state_size
-
-
-# def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_size,
-#                     activation, L, sketches_num, discount_factor):
-#
-#     with tf.name_scope("sketching"):
-#
-#         def conv_r(padded_matrix, r):
-#             """
-#             Extract r context columns around each column and concatenate
-#             :param padded_matrix: batch_size x L+(2*r) x 2*state_size
-#             :param r: context size
-#             :return:
-#             """
-#             # gather indices of padded
-#             time_major_matrix = tf.transpose(padded_matrix,
-#                                              [1, 2, 0])  # time-major  -> L x 2*state_size x batch_size
-#             contexts = []
-#             for j in np.arange(r, L + r):
-#                 # extract 2r+1 rows around i for each batch
-#                 context_j = time_major_matrix[j - r:j + r + 1, :, :]  # 2*r+1 x 2*state_size x batch_size
-#                 # concatenate
-#                 context_j = tf.reshape(context_j,
-#                                        [(2 * r + 1) * 2 * state_size, batch_size])  # (2*r+1)*(state_size) x batch_size
-#                 contexts.append(context_j)
-#             contexts = tf.stack(contexts)  # L x (2*r+1)* 2*(state_size) x batch_size
-#             batch_major_contexts = tf.transpose(contexts, [2, 0, 1])
-#             # switch back: batch_size x L x (2*r+1)*2(state_size) (batch-major)
-#             return batch_major_contexts
-#
-#         def constrained_softmax(input_tensor, b, temp=1.0):
-#             """
-#             Compute the constrained softmax (csoftmax);
-#             See paper "Learning What's Easy: Fully Differentiable Neural Easy-First Taggers"
-#             on https://andre-martins.github.io/docs/emnlp2017_final.pdf (page 4)
-#
-#             :param input_tensor: input tensor
-#             :param b: cumulative attention see paper
-#             :param temp: softmax temperature
-#             :return: distribution
-#             """
-#
-#             # input_tensor = tf.reduce_mean(input_tensor)
-#             z = tf.reduce_sum(tf.exp(input_tensor/temp), axis=1, keep_dims=True)
-#             a = tf.exp(input_tensor/temp) * (b/temp) / z
-#             # a = tf.exp(input_tensor/temp) * b / z
-#             u = tf.ones_like(b) - b
-#             t_mask = tf.to_float(tf.less_equal(a, u))
-#             f_mask = tf.to_float(tf.less(u, a))
-#             A = a * t_mask
-#             U = u * f_mask
-#
-#             csoftmax = A + U
-#
-#             return csoftmax
-#
-#         def sketch_step(tensor, cum_attention, hidden_dim):
-#
-#             with tf.variable_scope("W_hh_scope", reuse=tf.AUTO_REUSE):
-#                 W_hh = tf.get_variable(name="W_hh", shape=[2 * state_size * (2 * window_size + 1), state_size],
-#                                        initializer=tf.contrib.layers.xavier_initializer(uniform=True,
-#                                                                                         dtype=tf.float32))
-#             with tf.variable_scope("w_h_scope", reuse=tf.AUTO_REUSE):
-#                 w_h = tf.get_variable(name="w_z", shape=[state_size],
-#                                       initializer=tf.random_uniform_initializer(dtype=tf.float32))
-#
-#             with tf.variable_scope("v_scope", reuse=tf.AUTO_REUSE):
-#                 v = tf.get_variable(name="v", shape=[1, 1, hidden_dim],
-#                                     initializer=tf.random_uniform_initializer(dtype=tf.float32))
-#
-#             with tf.variable_scope("W_hsz_scope", reuse=tf.AUTO_REUSE):
-#                 W_hsz = tf.get_variable(name="W_hsz", shape=[1, 1, 2 * state_size * (2 * window_size + 1), hidden_dim],
-#                                         initializer=tf.contrib.layers.xavier_initializer(uniform=True,
-#                                                                                          dtype=tf.float32))
-#
-#             with tf.variable_scope("w_z_scope", reuse=tf.AUTO_REUSE):
-#                 w_z = tf.get_variable(name="w_z", shape=[1, 1, hidden_dim],
-#                                       initializer=tf.random_uniform_initializer(dtype=tf.float32))
-#
-#             preattention = activation(tf.matmul(tensor, W_hsz) + w_z)  # [batch_size, L, hid_dim]
-#             attention = tf.matmul(preattention, v)  # [batch_size, L]
-#
-#             attentions = attention - cum_attention*discount_factor  # [batch_size, L]
-#             constrained_weights = constrained_softmax(attentions, cum_attention)  # [batch_size, 1]
-#
-#             cn = tf.matmul(tf.expand_dims(constrained_weights, [1]), tensor)  # [batch_size, 1,
-#             #  2*state_size*(2*window_size + 1)]
-#             cn = tf.reshape(cn, [batch_size, 2*state_size*(2*window_size + 1)])  # [batch_size,
-#             #  2*state_size*(2*window_size + 1)]
-#             S = activation(tf.matmul(cn, W_hh) + w_h)  # [batch_size, state_size]
-#
-#             S = tf.matmul(tf.expand_dims(constrained_weights, [2]), tf.expand_dims(S, [1]))  # [batch_size, L,
-#             #  state_size]
-#
-#             return S, constrained_weights
-#
-#         def prepare_tensor(hidstates, sk, padding_col):
-#             hs = tf.concat([hidstates, sk], 2)
-#             # add column on right and left, and add context window
-#             hs = tf.pad(hs, padding_col, "CONSTANT", name="HS_padded")
-#             hs = conv_r(hs, window_size)  # [batch_size, L, 2*state*(2*window_size + 1)]
-#             return hs
-#
-#         sketch = tf.zeros(shape=[batch_size, L, state_size], dtype=tf.float32)  # sketch tenzor
-#         cum_att = tf.zeros(shape=[batch_size, L])  # cumulative attention
-#         padding_hs_col = tf.constant([[0, 0], [window_size, window_size], [0, 0]], name="padding_hs_col")
-#         sketches = []
-#         cum_attentions = []
-#
-#         for i in xrange(sketches_num):
-#             with tf.variable_scope("sketch_loop", reuse=tf.AUTO_REUSE):
-#                 sketch_, cum_att_ = sketch_step(prepare_tensor(hidden_states, sketch, padding_hs_col), cum_att,
-#                                                 dim_hlayer)
-#             sketch += sketch_
-#             cum_att += cum_att_
-#             sketches.append(sketch_)  # list of tensors with shape [batch_size, L, state_size]
-#             cum_attentions.append(cum_att_)  # list of tensors with shape [batch_size, L]
-#
-#     return sketches, cum_attentions
-
-
-# Attention block (B_Block)
+# Attention block
 def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_size,
                     activation, L, sketches_num, discount_factor, temperature):
 
@@ -172,8 +27,8 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
             """
 
             # input_tensor = tf.reduce_mean(input_tensor)
-            z = tf.reduce_sum(tf.exp(input_tensor/temp), axis=1, keep_dims=True)
-            a = tf.exp(input_tensor/temp) * (b/temp) / z
+            z = tf.reduce_sum(tf.exp(input_tensor / temp), axis=1, keep_dims=True)
+            a = tf.exp(input_tensor / temp) * (b / temp) / z
             # a = tf.exp(input_tensor/temp) * b / z
             u = tf.ones_like(b) - b
             t_mask = tf.to_float(tf.less_equal(a, u))
@@ -303,7 +158,10 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
 
 
 class NEF():
-    def __init__(self, params, tag_vocab):  # class_weights=None, word_vocab_len
+    def __init__(self, params, t2i, i2t):  # class_weights=None, word_vocab_len
+
+        config = tf.ConfigProto()
+        config.gpu_options.per_process_gpu_memory_fraction = 0.8
 
         self.L = params['maximum_L']
         self.labels_num = params['labels_num']
@@ -348,7 +206,7 @@ class NEF():
 
         self.word_emb = utils.load_embeddings(self.embeddings, self.embeddings_dim, self.emb_format)
 
-        self.path = 'Config:\nTask: NER\nNet configuration:\n\tLSTM: bi-LSTM; LSTM units: {0};\n\t\'' \
+        self.path = 'Config:\nTask: NER\nNet configuration:\n\tLSTM: bi-LSTM; LSTM units: {0};\n\t\' '\
                     'Hidden layer dim: {1}; Activation Function: {2}\n' \
                     'Other parameters:\n\t' \
                     'Number of lables: {3};\n\tLanguage: Russian;\n\tEmbeddings dimension: {4};\n\t' \
@@ -370,14 +228,7 @@ class NEF():
                                                                self.attention_temperature,
                                                                self.attention_discount_factor)
 
-        tags = tag_vocab.w2i.keys()  # return_w2i.keys()
-        t_emb_dict = dict()
-
-        for i, tag in enumerate(tags):
-            t_emb = np.zeros((len(tags)))
-            t_emb[i] = 1.
-            t_emb_dict[tag] = t_emb
-        self.tag_emb = t_emb_dict
+        self.tag_emb = t2i
 
         if self.activation_func == 'tanh':
             self.activation = tf.nn.tanh
@@ -397,14 +248,37 @@ class NEF():
         self.y = tf.placeholder(tf.int32, [self.batch_size, self.L, self.tag_emb_dim])  # Output Tags embeddings.
         self.lenghs = tf.placeholder(tf.int32, [None])  # Lengths of the sentences.
 
-        lstm_out, final_state, state_size = input_block(self.x, self.lenghs, self.drop, self.lstm_units)
-        self.sketche, self.cum_attention = attention_block(lstm_out, state_size, self.window_size, self.dim_hlayer,
-                                                           self.batch_size, self.activation, self.L, self.sketches_num,
-                                                           self.attention_discount_factor,
-                                                           self.attention_temperature)
+        # Input block (A_Block)
 
-        # self.sketche = self.sketches[-1]  # last sketch
-        hs_final = tf.concat([lstm_out, self.sketche], axis=2)  # [batch_size, L, 2*state_size]
+        with tf.name_scope("embedding"):
+            # dropout on embeddings
+            emb_drop = tf.nn.dropout(self.x, self.drop)
+
+        with tf.name_scope("Input"):
+            fw_cell = tf.nn.rnn_cell.LSTMCell(num_units=self.lstm_units, state_is_tuple=True)
+
+            with tf.name_scope("bi-lstm"):
+                bw_cell = tf.nn.rnn_cell.LSTMCell(num_units=self.lstm_units, state_is_tuple=True)
+
+                # dropout on lstm
+                # TODO make params, input is already dropped out
+                fw_cell = tf.nn.rnn_cell.DropoutWrapper(fw_cell, input_keep_prob=1, output_keep_prob=self.drop)
+                bw_cell = tf.nn.rnn_cell.DropoutWrapper(bw_cell, input_keep_prob=1, output_keep_prob=self.drop)
+
+                outputs, final_state = tf.nn.bidirectional_dynamic_rnn(fw_cell, bw_cell, emb_drop,
+                                                                       sequence_length=self.lenghs,
+                                                                       dtype=tf.float32, time_major=False)
+                outputs = tf.concat(outputs, 2)
+                state_size = 2 * self.lstm_units  # concat of fw and bw lstm output
+
+        # Attention block
+        self.sketches, cum_attentions = attention_block(outputs, state_size, self.window_size, self.dim_hlayer,
+                                                        self.batch_size, self.activation, self.L, self.sketches_num,
+                                                        self.attention_discount_factor,
+                                                        self.attention_temperature)
+
+        self.sketche = self.sketches[-1]  # last sketch
+        hs_final = tf.concat([outputs, self.sketche], axis=2)  # [batch_size, L, 2*state_size]
 
         with tf.name_scope("Out"):
             W_out = tf.get_variable(name="W_out", shape=[2*state_size, self.labels_num],
@@ -441,15 +315,16 @@ class NEF():
                                     dtype=[tf.int64, tf.float32])  # elems are unpacked along dim 0 -> L
 
             self.pred_labels = scores_pred[0]
+            self.pred_labels = tf.transpose(self.pred_labels, [1, 0])
             self.losses = scores_pred[1]
 
             # masked, batch_size x 1 (regularization like dropout but mask)
             # losses = tf.reduce_mean(tf.cast(mask, tf.float32) * tf.transpose(losses, [1, 0]), 1)
             self.losses_reg = tf.reduce_mean(tf.transpose(self.losses, [1, 0]), 1)
-            # regularization
-            with tf.variable_scope('loop_matrix', reuse=tf.AUTO_REUSE):
-                W_hh = tf.get_variable(name='W_hh')
 
+        # regularization
+        with tf.variable_scope('sketch', reuse=tf.AUTO_REUSE):
+            W_hh = tf.get_variable(name='W_hh', shape=[2 * state_size * (2 * self.window_size + 1), state_size])
             if self.l2_scale > 0:
                 weights_list = [W_hh, W_out]  # word embeddings not included
                 l2_loss = tf.contrib.layers.apply_regularization(
@@ -465,7 +340,8 @@ class NEF():
         if self.mode == 'train':
             train_params = tf.trainable_variables()
 
-            gradients = tf.gradients(tf.reduce_mean(self.losses_reg, 0), train_params)  # batch normalization
+            self.losses_reg = tf.reduce_mean(self.losses_reg, 0)
+            gradients = tf.gradients(self.losses_reg, train_params)  # batch normalization
             if self.max_gradient_norm > -1:
                 clipped_gradients, norm = tf.clip_by_global_norm(gradients, self.max_gradient_norm)
                 self.update = self.optimizer.apply_gradients(zip(clipped_gradients, train_params))
@@ -473,19 +349,15 @@ class NEF():
             else:
                 self.update = self.optimizer.apply_gradients(zip(gradients, train_params))
 
-        self.saver = tf.train.Saver(tf.all_variables())
+        self.saver = tf.train.Saver(tf.global_variables())
 
     def tensorize_example(self, example, mode='train'):
 
         if mode not in ['train', 'inf']:
             raise ValueError('Not implemented mode = {}'.format(mode))
 
-        sent_num = len(example)
-        assert sent_num <= self.batch_size
-
-        lengs = []
-        for s in example:
-            lengs.append(len(s))
+        # sent_num = len(example)
+        # assert sent_num <= self.batch_size
 
         x = np.zeros((self.batch_size, self.L, self.embeddings_dim))
         y = np.zeros((self.batch_size, self.L, self.tag_emb_dim))
@@ -512,7 +384,7 @@ class NEF():
 
         if sketch_:
             if all_:
-                pred_labels, sketch = sess.run([self.pred_labels, self.sketche],
+                pred_labels, sketch = sess.run([self.pred_labels, self.sketches],
                                                feed_dict={self.x: x, self.y: y, self.lenghs: lengs})
             else:
                 pred_labels, sketch = sess.run([self.pred_labels, self.sketche],
@@ -526,7 +398,7 @@ class NEF():
     def load(self, sess, path):
 
         if tf.gfile.Exists(path):
-            print "[ Reading model parameters from {} ]".format(path)
+            print("[ Reading model parameters from {} ]".format(path))
             self.saver.restore(sess, path)
         else:
             raise ValueError('No checkpoint in path {}'.format(path))

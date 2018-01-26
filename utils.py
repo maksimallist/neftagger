@@ -1,10 +1,8 @@
-from collections import defaultdict
-from itertools import count
-from collections import Counter
+import collections
 import fasttext
 import numpy as np
-import collections
-import tensorflow as tf
+from collections import OrderedDict
+from collections import Counter
 
 
 def read_dataset(fname, maximum_sentence_length=-1, read_ordering=False, split=True):
@@ -15,7 +13,7 @@ def read_dataset(fname, maximum_sentence_length=-1, read_ordering=False, split=T
     tags = []
     orderings = []
 
-    for line in file(fname):
+    for line in open(fname, 'r'):
         if ordering is None and read_ordering:
             line = line.lstrip('#')
             line = line.strip().split(' ')
@@ -67,7 +65,7 @@ def load_embeddings(embedding_path, embedding_size, embedding_format):
     """
     print("Loading word embeddings from {}...".format(embedding_path))
 
-    if embedding_format == 'vec':
+    if embedding_format in ['vec', 'txt']:
         default_embedding = np.zeros(embedding_size)
         embedding_dict = collections.defaultdict(lambda: default_embedding)
         skip_first = embedding_format == "vec"
@@ -75,7 +73,7 @@ def load_embeddings(embedding_path, embedding_size, embedding_format):
             for i, line in enumerate(f.readlines()):
                 if skip_first and i == 0:
                     continue
-                splits = line.split()
+                splits = line.split(' ')
                 assert len(splits) == embedding_size + 1
                 word = splits[0]
                 embedding = np.array([float(s) for s in splits[1:]])
@@ -88,78 +86,73 @@ def load_embeddings(embedding_path, embedding_size, embedding_format):
     return embedding_dict
 
 
-class Vocab:
-    def __init__(self, w2i=None):
-        if w2i is None:
-            w2i = defaultdict(count(0).next)
-        self.w2i = dict(w2i)
-        self.i2w = {i: w for w, i in w2i.iteritems()}
-
-    @classmethod
-    def from_corpus(cls, corpus):
-        w2i = defaultdict(count(0).next)
-        for sent in corpus:
-            [w2i[word] for word in sent]
-        return Vocab(w2i)
-
-    def size(self): return len(self.w2i.keys())
-
-    def return_w2i(self):
-        return self.w2i
-
-    def return_i2w(self):
-        return self.i2w
-
-
-def create_vocabularies(corpora, word_cutoff=0, lower_case=False):
-    word_counter = Counter()
-    tag_counter = Counter()
-    word_counter['_UNK_'] = word_cutoff + 1
-
-    for corpus in corpora:
-        for s in corpus:
-            for w, t in s:
-                if lower_case:
-                    word_counter[w.lower()] += 1
-                else:
-                    word_counter[w] += 1
-                tag_counter[t] += 1
-
-    words = [w for w in word_counter if word_counter[w] > word_cutoff]
-    tags = [t for t in tag_counter]
-
-    word_vocabulary = Vocab.from_corpus([words])
-    tag_vocabulary = Vocab.from_corpus([tags])
-
-    print('Words: %d' % word_vocabulary.size())
-    print('Tags: %d' % tag_vocabulary.size())
-
-    return word_vocabulary, tag_vocabulary, word_counter
-
+# def create_vocabulary(corpora, word_cutoff=0, lower_case=False):
+#     word_counter = Counter()
+#     tag_counter = Counter()
+#     word_counter['_UNK_'] = word_cutoff + 1
+#     tags_ = list()
+#     words_ = list()
+#
+#     for corpus in corpora:
+#         for w, t in corpus:
+#             if lower_case:
+#                 word_counter[w.lower()] += 1
+#                 if w not in words_:
+#                     words_.append(w)
+#             else:
+#                 word_counter[w] += 1
+#             tag_counter[t] += 1
+#             if t not in tags_:
+#                 tags_.append(t)
+#
+#     words = [w for w in word_counter if word_counter[w] > word_cutoff]
+#     tags = [t for t in tag_counter]
+#
+#     # word_vocabulary = Vocab.from_corpus([words])
+#     # tag_vocabulary = Vocab.from_corpus([tags])
+#
+#     # print('Words: %d' % word_vocabulary.size())
+#     # print('Tags: %d' % tag_vocabulary.size())
+#     print('Words: %d' % len(word_counter.keys()))
+#     print('Tags: %d' % len(tags_))
+#
+#     return words_, tags_, word_counter
 
 def create_vocabulary(corpora, word_cutoff=0, lower_case=False):
     word_counter = Counter()
     tag_counter = Counter()
     word_counter['_UNK_'] = word_cutoff + 1
+    index = dict()
+    tags_ = dict()
+    k = 0
+    words_ = list()
 
     for corpus in corpora:
         for w, t in corpus:
             if lower_case:
                 word_counter[w.lower()] += 1
+                if w not in words_:
+                    words_.append(w)
             else:
                 word_counter[w] += 1
             tag_counter[t] += 1
+            if t not in tags_.keys():
+                tags_[t] = k
+                index[k] = t
+                k += 1
 
     words = [w for w in word_counter if word_counter[w] > word_cutoff]
     tags = [t for t in tag_counter]
 
-    word_vocabulary = Vocab.from_corpus([words])
-    tag_vocabulary = Vocab.from_corpus([tags])
+    # word_vocabulary = Vocab.from_corpus([words])
+    # tag_vocabulary = Vocab.from_corpus([tags])
 
-    print('Words: %d' % word_vocabulary.size())
-    print('Tags: %d' % tag_vocabulary.size())
+    # print('Words: %d' % word_vocabulary.size())
+    # print('Tags: %d' % tag_vocabulary.size())
+    print('Words: %d' % len(word_counter.keys()))
+    print('Tags: %d' % len(tags_))
 
-    return word_vocabulary, tag_vocabulary, word_counter
+    return tags_, index
 
 
 def accuracy(y_i, predictions):
@@ -219,124 +212,192 @@ def f1s_binary(y_i, predictions):
     return f1_1, f1_2
 
 
-def attention_block_with_csoftmax(hidden_states, state_size, window_size, dim_hlayer, batch_size,
-                                  activation, L, sketches_num, discount_factor):
+def chunk_finder(current_token, previous_token, tag):
+    current_tag = current_token.split('-', 1)[-1]
+    previous_tag = previous_token.split('-', 1)[-1]
+    if previous_tag != tag:
+        previous_tag = 'O'
+    if current_tag != tag:
+        current_tag = 'O'
+    if (previous_tag == 'O' and current_token == 'B-' + tag) or \
+            (previous_token == 'I-' + tag and current_token == 'B-' + tag) or \
+            (previous_token == 'B-' + tag and current_token == 'B-' + tag) or \
+            (previous_tag == 'O' and current_token == 'I-' + tag):
+        create_chunk = True
+    else:
+        create_chunk = False
 
-    with tf.name_scope("sketching"):
+    if (previous_token == 'I-' + tag and current_token == 'B-' + tag) or \
+            (previous_token == 'B-' + tag and current_token == 'B-' + tag) or \
+            (current_tag == 'O' and previous_token == 'I-' + tag) or \
+            (current_tag == 'O' and previous_token == 'B-' + tag):
+        pop_out = True
+    else:
+        pop_out = False
+    return create_chunk, pop_out
 
-        def conv_r(padded_matrix, r):
-            """
-            Extract r context columns around each column and concatenate
-            :param padded_matrix: batch_size x L+(2*r) x 2*state_size
-            :param r: context size
-            :return:
-            """
-            # gather indices of padded
-            time_major_matrix = tf.transpose(padded_matrix,
-                                             [1, 2, 0])  # time-major  -> L x 2*state_size x batch_size
-            contexts = []
-            for j in np.arange(r, L + r):
-                # extract 2r+1 rows around i for each batch
-                context_j = time_major_matrix[j - r:j + r + 1, :, :]  # 2*r+1 x 2*state_size x batch_size
-                # concatenate
-                context_j = tf.reshape(context_j,
-                                       [(2 * r + 1) * 2 * state_size, batch_size])  # (2*r+1)*(state_size) x batch_size
-                contexts.append(context_j)
-            contexts = tf.stack(contexts)  # L x (2*r+1)* 2*(state_size) x batch_size
-            batch_major_contexts = tf.transpose(contexts, [2, 0, 1])
-            # switch back: batch_size x L x (2*r+1)*2(state_size) (batch-major)
-            return batch_major_contexts
 
-        def constrained_softmax(input_tensor, b, temp=1.0):
-            """
-            Compute the constrained softmax (csoftmax);
-            See paper "Learning What's Easy: Fully Differentiable Neural Easy-First Taggers"
-            on https://andre-martins.github.io/docs/emnlp2017_final.pdf (page 4)
+def precision_recall_f1(y_true, y_pred, print_results=True, short_report=False, entity_of_interest=None):
+    # Find all tags
+    tags = set()
+    for tag in y_true + y_pred:
+        if tag != 'O':
+            current_tag = tag[2:]
+            tags.add(current_tag)
+    tags = sorted(list(tags))
 
-            :param input_tensor: input tensor
-            :param b: cumulative attention see paper
-            :param temp: softmax temperature
-            :return: distribution
-            """
+    results = OrderedDict()
+    for tag in tags:
+        results[tag] = OrderedDict()
+    results['__total__'] = OrderedDict()
+    n_tokens = len(y_true)
+    total_correct = 0
+    # Firstly we find all chunks in the ground truth and prediction
+    # For each chunk we write starting and ending indices
 
-            # input_tensor = tf.reduce_mean(input_tensor)
-            z = tf.reduce_sum(tf.exp(input_tensor/temp), axis=1, keep_dims=True)
-            a = tf.exp(input_tensor/temp) * (b/temp) / z
-            # a = tf.exp(input_tensor/temp) * b / z
-            u = tf.ones_like(b) - b
-            t_mask = tf.to_float(tf.less_equal(a, u))
-            f_mask = tf.to_float(tf.less(u, a))
-            A = a * t_mask
-            U = u * f_mask
+    for tag in tags:
+        count = 0
+        true_chunk = list()
+        pred_chunk = list()
+        y_true = [str(y) for y in y_true]
+        y_pred = [str(y) for y in y_pred]
+        prev_tag_true = 'O'
+        prev_tag_pred = 'O'
+        while count < n_tokens:
+            yt = y_true[count]
+            yp = y_pred[count]
 
-            csoftmax = A + U
+            create_chunk_true, pop_out_true = chunk_finder(yt, prev_tag_true, tag)
+            if pop_out_true:
+                true_chunk[-1].append(count - 1)
+            if create_chunk_true:
+                true_chunk.append([count])
 
-            return csoftmax
+            create_chunk_pred, pop_out_pred = chunk_finder(yp, prev_tag_pred, tag)
+            if pop_out_pred:
+                pred_chunk[-1].append(count - 1)
+            if create_chunk_pred:
+                pred_chunk.append([count])
+            prev_tag_true = yt
+            prev_tag_pred = yp
+            count += 1
 
-        def sketch_step(tensor, cum_attention, hidden_dim):
+        if len(true_chunk) > 0 and len(true_chunk[-1]) == 1:
+            true_chunk[-1].append(count - 1)
+        if len(pred_chunk) > 0 and len(pred_chunk[-1]) == 1:
+            pred_chunk[-1].append(count - 1)
 
-            bs_split = tf.split(tensor, L, axis=1)
-            attentions = []
+        # Then we find all correctly classified intervals
+        # True positive results
+        tp = 0
+        for start, stop in true_chunk:
+            for start_p, stop_p in pred_chunk:
+                if start == start_p and stop == stop_p:
+                    tp += 1
+                if start_p > stop:
+                    break
+        total_correct += tp
+        # And then just calculate errors of the first and second kind
+        # False negative
+        fn = len(true_chunk) - tp
+        # False positive
+        fp = len(pred_chunk) - tp
+        if tp + fp > 0:
+            precision = tp / (tp + fp) * 100
+        else:
+            precision = 0
+        if tp + fn > 0:
+            recall = tp / (tp + fn) * 100
+        else:
+            recall = 0
+        if precision + recall > 0:
+            f1 = 2 * precision * recall / (precision + recall)
+        else:
+            f1 = 0
+        results[tag]['precision'] = precision
+        results[tag]['recall'] = recall
+        results[tag]['f1'] = f1
+        results[tag]['n_predicted_entities'] = len(pred_chunk)
+        results[tag]['n_true_entities'] = len(true_chunk)
+    total_true_entities = 0
+    total_predicted_entities = 0
+    total_precision = 0
+    total_recall = 0
+    total_f1 = 0
+    for tag in results:
+        if tag == '__total__':
+            continue
+        n_pred = results[tag]['n_predicted_entities']
+        n_true = results[tag]['n_true_entities']
+        total_true_entities += n_true
+        total_predicted_entities += n_pred
+        total_precision += results[tag]['precision'] * n_pred
+        total_recall += results[tag]['recall'] * n_true
+        total_f1 += results[tag]['f1'] * n_true
+    if total_true_entities > 0:
+        accuracy = total_correct / total_true_entities * 100
+        total_recall = total_recall / total_true_entities
+    else:
+        accuracy = 0
+        total_recall = 0
+    if total_predicted_entities > 0:
+        total_precision = total_precision / total_predicted_entities
+    else:
+        total_precision = 0
 
-            W_hh = tf.get_variable(name="W_hh", shape=[2 * state_size * (2 * window_size + 1), state_size],
-                                   initializer=tf.contrib.layers.xavier_initializer(uniform=True,
-                                                                                    dtype=tf.float32))
+    if total_precision + total_recall > 0:
+        total_f1 = 2 * total_precision * total_recall / (total_precision + total_recall)
+    else:
+        total_f1 = 0
 
-            w_h = tf.get_variable(name="w_z", shape=[state_size],
-                                  initializer=tf.random_uniform_initializer(dtype=tf.float32))
+    results['__total__']['n_predicted_entities'] = total_predicted_entities
+    results['__total__']['n_true_entities'] = total_true_entities
+    results['__total__']['precision'] = total_precision
+    results['__total__']['recall'] = total_recall
+    results['__total__']['f1'] = total_f1
 
-            v = tf.get_variable(name="v", shape=[hidden_dim, 1],
-                                initializer=tf.random_uniform_initializer(dtype=tf.float32))
+    if print_results:
+        s = 'processed {len} tokens ' \
+            'with {tot_true} phrases; ' \
+            'found: {tot_pred} phrases;' \
+            ' correct: {tot_cor}.\n\n'.format(len=n_tokens,
+                                              tot_true=total_true_entities,
+                                              tot_pred=total_predicted_entities,
+                                              tot_cor=total_correct)
 
-            W_hsz = tf.get_variable(name="W_hsz", shape=[2 * state_size * (2 * window_size + 1), hidden_dim],
-                                    initializer=tf.contrib.layers.xavier_initializer(uniform=True,
-                                                                                     dtype=tf.float32))
+        s += 'precision:  {tot_prec:.2f}%; ' \
+             'recall:  {tot_recall:.2f}%; ' \
+             'FB1:  {tot_f1:.2f}\n\n'.format(acc=accuracy,
+                                             tot_prec=total_precision,
+                                             tot_recall=total_recall,
+                                             tot_f1=total_f1)
 
-            w_z = tf.get_variable(name="w_z", shape=[hidden_dim],
-                                  initializer=tf.random_uniform_initializer(dtype=tf.float32))
-
-            for j in xrange(L):
-                tensor = tf.squeeze(bs_split[i])
-                preattention = activation(tf.matmul(tensor, W_hsz) + w_z)
-                attention = tf.matmul(preattention, v)  # [batch_size, 1]
-                attentions.append(attention)
-
-            attentions = tf.stack(attentions, axis=1)  # [batch_size, L]
-            attentions = attentions - cum_attention*discount_factor
-            constrained_weights = constrained_softmax(attentions, cum_attention)  # [batch_size, 1]
-
-            # TODO: check !!!
-            # cn = tf.reduce_sum(tensor*constrained_weights, axis=1)  # [batch_size, 1,
-            #  2*state_size*(2*window_size + 1)] ?
-            cn = tf.matmul(tf.expand_dims(constrained_weights, [1]), tensor)  # [batch_size, 1,
-            #  2*state_size*(2*window_size + 1)]
-            cn = tf.reshape(cn, [batch_size, 2*state_size*(2*window_size + 1)])  # [batch_size,
-            #  2*state_size*(2*window_size + 1)]
-            S = activation(tf.matmul(cn, W_hh) + w_h)  # [batch_size, state_size]
-
-            S = tf.matmul(tf.expand_dims(constrained_weights, [2]), tf.expand_dims(S, [1]))  # [batch_size, L,
-            #  state_size]
-
-            return S, constrained_weights
-
-        sketch = tf.zeros(shape=[batch_size, L, state_size], dtype=tf.float32)  # sketch tenzor
-        cum_att = tf.zeros(shape=[batch_size, L])  # cumulative attention
-        padding_hs_col = tf.constant([[0, 0], [window_size, window_size], [0, 0]], name="padding_hs_col")
-        sketches = []
-        cum_attentions = []
-
-        def prepare_tensor(hidstates, sk, padding_col):
-            hs = tf.concat(2, [hidstates, sk])
-            # add column on right and left, and add context window
-            hs = tf.pad(hs, padding_col, "CONSTANT", name="HS_padded")
-            hs = conv_r(hs, window_size)  # [batch_size, L, 2*state*(2*window_size + 1)]
-            return hs
-
-        for i in xrange(sketches_num):
-            sketch_, cum_att_ = sketch_step(prepare_tensor(hidden_states, sketch, padding_hs_col), cum_att, dim_hlayer)
-            sketch += sketch_
-            cum_att += cum_att_
-            sketches.append(sketch_)  # list of tensors with shape [batch_size, L, state_size]
-            cum_attentions.append(cum_att_)  # list of tensors with shape [batch_size, L]
-
-    return sketches, cum_attentions
+        if not short_report:
+            for tag in tags:
+                if entity_of_interest is not None:
+                    if entity_of_interest in tag:
+                        s += '\t' + tag + ': precision:  {tot_prec:.2f}%; ' \
+                                          'recall:  {tot_recall:.2f}%; ' \
+                                          'F1:  {tot_f1:.2f} ' \
+                                          '{tot_predicted}\n\n'.format(tot_prec=results[tag]['precision'],
+                                                                       tot_recall=results[tag]['recall'],
+                                                                       tot_f1=results[tag]['f1'],
+                                                                       tot_predicted=results[tag]['n_predicted_entities'])
+                elif tag != '__total__':
+                    s += '\t' + tag + ': precision:  {tot_prec:.2f}%; ' \
+                                      'recall:  {tot_recall:.2f}%; ' \
+                                      'F1:  {tot_f1:.2f} ' \
+                                      '{tot_predicted}\n\n'.format(tot_prec=results[tag]['precision'],
+                                                                   tot_recall=results[tag]['recall'],
+                                                                   tot_f1=results[tag]['f1'],
+                                                                   tot_predicted=results[tag]['n_predicted_entities'])
+        elif entity_of_interest is not None:
+            s += '\t' + entity_of_interest + ': precision:  {tot_prec:.2f}%; ' \
+                              'recall:  {tot_recall:.2f}%; ' \
+                              'F1:  {tot_f1:.2f} ' \
+                              '{tot_predicted}\n\n'.format(tot_prec=results[entity_of_interest]['precision'],
+                                                           tot_recall=results[entity_of_interest]['recall'],
+                                                           tot_f1=results[entity_of_interest]['f1'],
+                                                           tot_predicted=results[entity_of_interest]['n_predicted_entities'])
+        print(s)
+    return results
