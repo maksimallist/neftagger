@@ -77,13 +77,12 @@ train_flag['train'] = True  # training model
 train_flag['prediction_path'] = './ner/predictions/{0}/{1}/'.format(language, name)
 
 
-def batch_generator(sentences, batch_size):
+def batch_generator(sentences, batch_size, k):
     length = len(sentences)
     for i in range(0, length, batch_size):
-        yield sentences[i:i+batch_size]
+        yield sentences[i:i+batch_size], k+1
 
 
-# TODO: check
 def refactor_data(example, tags, shape):
     n = np.zeros((shape[0], shape[1]))
 
@@ -137,8 +136,8 @@ def train(generator, param, flags):
         # start learning
         start_learning = time.time()
         for e in range(flags['epochs']):
-            gen = generator(train_data, param['batch_size'])
-            gen_dev = generator(dev_data, param['batch_size'])
+            gen = generator(train_data, param['batch_size'], 0)
+            gen_dev = generator(dev_data, param['batch_size'], 0)
 
             train_predictions = []
             train_true = []
@@ -146,7 +145,7 @@ def train(generator, param, flags):
             m_true = []
             start = time.time()
 
-            for data in gen:
+            for data, i in gen:
                 pred_labels, losses = model.train_op(data, sess)
                 train_predictions.extend(pred_labels)
                 mpr = convert(pred_labels, i2t)
@@ -156,22 +155,24 @@ def train(generator, param, flags):
                 train_true.extend(y)
                 mtr = convert(y, i2t)
                 m_true.extend(mtr)
-                print('[ Epoch {0}; Loss: {1} ]'.format(e, losses))
+                # TODO fix it
+                if i % 20:
+                    print('[ Epoch {0}; Loss: {1} ]'.format(e, losses))
 
-            acc = accuracy(train_true, train_predictions)
-            print('[accuracy = {}]\n'.format(acc))
-
-            f1_nof1, f1_nof2 = f1s_binary(train_true, train_predictions)
-            print('[ Non official f1 (1): {} ]\n'.format(f1_nof1))
-            print('[ Non official f1 (2): {} ]\n'.format(f1_nof2))
-            print('[ Epoch {0} end; Time: {1} ]\n'.format(e+1, time.time() - start))
+            result = dict()
+            result['accuracy'] = accuracy(train_true, train_predictions)
+            result['f1_nof1'], result['f1_nof2'] = f1s_binary(train_true, train_predictions)
+            # print('[ Non official f1 (1): {} ]\n'.format(f1_nof1))
+            # print('[ Non official f1 (2): {} ]\n'.format(f1_nof2))
+            # print('[ Epoch {0} end; Time: {1} ]\n'.format(e+1, time.time() - start))
+            print('\n{}'.format(result))
 
             conllf1 = precision_recall_f1(m_true, m_pred)
 
             print('[ Validation on {}: ... ]'.format(join(flags['data_dir'], 'russian_dev.txt')))
             dev_predictions = []
             dev_true = []
-            for data in gen_dev:
+            for data, i in gen_dev:
                 pred_labels = model.inference_op(data, sess)
                 dev_predictions.extend(pred_labels)
                 y_dev = refactor_data(data, tag_vocabulary, [param['batch_size'], param['maximum_L']])
