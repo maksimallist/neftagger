@@ -94,6 +94,15 @@ def refactor_data(example, tags, shape):
     return n
 
 
+def convert(tensor, tags):
+    y = []
+    for i in range(np.shape(tensor)[0]):
+        for j in range(np.shape(tensor)[1]):
+            y.append(tags[tensor[i][j]])
+        y.append(tags[0])
+    return y
+
+
 # prepare dataset in format:
 # data = [[(word1, tag1), (word2, tag2), ...], [(...),(...)], ...]
 # list of sentences; sentence is a list if tuples with word and tag
@@ -133,14 +142,20 @@ def train(generator, param, flags):
 
             train_predictions = []
             train_true = []
+            m_pred = []
+            m_true = []
             start = time.time()
 
             for data in gen:
                 pred_labels, losses = model.train_op(data, sess)
                 train_predictions.extend(pred_labels)
+                mpr = convert(pred_labels, i2t)
+                m_pred.extend(mpr)
 
                 y = refactor_data(data, tag_vocabulary, [param['batch_size'], param['maximum_L']])
                 train_true.extend(y)
+                mtr = convert(y, i2t)
+                m_true.extend(mtr)
                 print('[ Epoch {0}; Loss: {1} ]'.format(e, losses))
 
             acc = accuracy(train_true, train_predictions)
@@ -150,6 +165,8 @@ def train(generator, param, flags):
             print('[ Non official f1 (1): {} ]\n'.format(f1_nof1))
             print('[ Non official f1 (2): {} ]\n'.format(f1_nof2))
             print('[ Epoch {0} end; Time: {1} ]\n'.format(e+1, time.time() - start))
+
+            conllf1 = precision_recall_f1(m_true, m_pred)
 
             print('[ Validation on {}: ... ]'.format(join(flags['data_dir'], 'russian_dev.txt')))
             dev_predictions = []
