@@ -75,6 +75,10 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
             """
 
             # input_tensor = tf.reduce_mean(input_tensor)
+
+            row_max = tf.expand_dims(tf.reduce_max(input_tensor, 1), 1)
+            input_tensor = input_tensor - row_max
+
             z = tf.reduce_sum(tf.exp(input_tensor / temp), axis=1, keep_dims=True)
             a = tf.exp(input_tensor / temp) * (b / temp) / z
             # a = tf.exp(input_tensor/temp) * b / z
@@ -124,7 +128,7 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
         sketch += sketch_
         cum_att += cum_att_
         sketches.append(sketch_)  # list of tensors with shape [batch_size, L, state_size]
-        cum_attentions.append(cum_att_)  # list of tensors with shape [batch_size, L]
+        cum_attentions.append(cum_att)  # list of tensors with shape [batch_size, L]
 
     return sketches, cum_attentions
 
@@ -247,6 +251,10 @@ class NEF():
                                                         self.attention_discount_factor,
                                                         self.attention_temperature)
 
+        ######################################
+        self.cum_att_last = cum_attentions[0]
+        ######################################
+
         self.sketche = self.sketches[-1]  # last sketch
         hs_final = tf.concat([outputs, self.sketche], axis=2)  # [batch_size, L, 2*state_size]
 
@@ -343,8 +351,11 @@ class NEF():
     def train_op(self, example, sess):
         x, y = self.tensorize_example(example)
 
-        pred_labels, losses, _ = sess.run([self.pred_labels, self.losses_reg, self.update],
-                                          feed_dict={self.x: x, self.y: y})
+        pred_labels, losses, _, cum_att = sess.run([self.pred_labels, self.losses_reg, self.update, self.cum_att_last],
+                                                    feed_dict={self.x: x, self.y: y})
+
+        print(cum_att, '\n')
+        print(pred_labels, '\n')
 
         return pred_labels, losses
 
