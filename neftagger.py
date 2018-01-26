@@ -107,7 +107,7 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
             cum_att_q.enqueue(cum_att_init)
 
             # starting sketching "imagination" cycle
-            for i in xrange(n):
+            for i in range(n):
                 # pull out sketch_i and cumulative_attention_i from queues
                 sketch_i = sketch_q.dequeue()
                 cum_att_i = cum_att_q.dequeue()
@@ -246,7 +246,7 @@ class NEF():
         # network graph
         self.x = tf.placeholder(tf.float32, [self.batch_size, self.L, self.embeddings_dim])  # Input Text embeddings.
         self.y = tf.placeholder(tf.int32, [self.batch_size, self.L, self.tag_emb_dim])  # Output Tags embeddings.
-        self.lenghs = tf.placeholder(tf.int32, [None])  # Lengths of the sentences.
+        self.lenghs = tf.placeholder(tf.int32, [self.batch_size])  # Lengths of the sentences.
 
         # Input block (A_Block)
 
@@ -361,6 +361,7 @@ class NEF():
 
         x = np.zeros((self.batch_size, self.L, self.embeddings_dim))
         y = np.zeros((self.batch_size, self.L, self.tag_emb_dim))
+        lengh = np.ones((self.batch_size,))*self.L
 
         for i, sent in enumerate(example):
             for j, z in enumerate(sent):
@@ -368,30 +369,30 @@ class NEF():
                 if mode == 'train':
                     y[i, j] = self.tag_emb[z[1]]  # tags
 
-        return x, y, lengs
+        return x, y, lengh
 
     def train_op(self, example, sess):
-        x, y, lengs = self.tensorize_example(example)
+        x, y, length = self.tensorize_example(example)
 
         pred_labels, losses, _ = sess.run([self.pred_labels, self.losses_reg, self.update],
-                                          feed_dict={self.x: x, self.y: y, self.lenghs: lengs})
+                                          feed_dict={self.x: x, self.y: y, self.lenghs: length})
 
         return pred_labels, losses
 
     def inference_op(self, example, sess, sketch_=False, all_=False):
         self.mode = 'inf'
-        x, y, lengs = self.tensorize_example(example, 'inf')
+        x, y, length = self.tensorize_example(example, 'inf')
 
         if sketch_:
             if all_:
                 pred_labels, sketch = sess.run([self.pred_labels, self.sketches],
-                                               feed_dict={self.x: x, self.y: y, self.lenghs: lengs})
+                                               feed_dict={self.x: x, self.y: y, self.lenghs: length})
             else:
                 pred_labels, sketch = sess.run([self.pred_labels, self.sketche],
-                                               feed_dict={self.x: x, self.y: y, self.lenghs: lengs})
+                                               feed_dict={self.x: x, self.y: y, self.lenghs: length})
             return pred_labels, sketch
         else:
-            pred_labels = sess.run(self.pred_labels, feed_dict={self.x: x, self.y: y, self.lenghs: lengs})
+            pred_labels = sess.run(self.pred_labels, feed_dict={self.x: x, self.y: y, self.lenghs: length})
 
             return pred_labels
 
