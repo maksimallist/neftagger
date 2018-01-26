@@ -57,6 +57,7 @@ parameters['drop_prob_sketch'] = 1  # keep probability for dropout during sketch
 parameters["l2_scale"] = 0  # "L2 regularization constant"
 parameters["l1_scale"] = 0  # "L1 regularization constant"
 parameters["max_gradient_norm"] = -1  # "maximum gradient norm for clipping (-1: no clipping)"
+parameters['track_sketches'] = False  #
 
 # TODO: parametrization
 parameters['maximum_L'] = 124  # maximum length of sequences
@@ -71,8 +72,6 @@ train_flag['epochs'] = 20  # training epochs
 train_flag['checkpoint_freq'] = 5  # save model every x epochs
 train_flag['restore'] = False  # restoring last session from checkpoint
 train_flag['interactive'] = False  # interactive mode
-train_flag['track_sketches'] = False  # keep track of the sketches during learning
-train_flag['sketch_sentence_id'] = 434  # sentence id of sample (dev) to keep track of during sketching
 train_flag['train'] = True  # training model
 train_flag['prediction_path'] = './ner/predictions/{0}/{1}/'.format(language, name)
 

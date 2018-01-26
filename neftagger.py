@@ -8,51 +8,26 @@ import tensorflow as tf
 import utils
 
 
-# Input block (A_Block)
-def input_block(x, seq_lens, drop, lstm_units):
-
-    with tf.name_scope("embedding"):
-        # dropout on embeddings
-        emb_drop = tf.nn.dropout(x, drop)
-
-    with tf.name_scope("Input"):
-        fw_cell = tf.nn.rnn_cell.LSTMCell(num_units=lstm_units, state_is_tuple=True)
-
-        with tf.name_scope("bi-lstm"):
-            bw_cell = tf.nn.rnn_cell.LSTMCell(num_units=lstm_units, state_is_tuple=True)
-
-            # dropout on lstm
-            # TODO make params, input is already dropped out
-            fw_cell = tf.nn.rnn_cell.DropoutWrapper(fw_cell, input_keep_prob=1, output_keep_prob=drop)
-            bw_cell = tf.nn.rnn_cell.DropoutWrapper(bw_cell, input_keep_prob=1, output_keep_prob=drop)
-
-            outputs, final_state = tf.nn.bidirectional_dynamic_rnn(fw_cell, bw_cell, emb_drop, sequence_length=seq_lens,
-                                                                   dtype=tf.float32, time_major=False)
-            outputs = tf.concat(outputs, 2)
-            state_size = 2 * lstm_units  # concat of fw and bw lstm output
-
-    return outputs, final_state, state_size
-
-
-# Attention block (B_Block)
+# Attention block
 def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_size,
                     activation, L, sketches_num, discount_factor, temperature):
 
-    W_hsz = tf.get_variable(name="W_hsz", shape=[2 * state_size * (2 * window_size + 1), dim_hlayer],
-                            initializer=tf.contrib.layers.xavier_initializer(uniform=True,
-                                                                             dtype=tf.float32))
+    with tf.variable_scope('loop_matrices', reuse=tf.AUTO_REUSE):
+        W_hsz = tf.get_variable(name="W_hsz", shape=[2 * state_size * (2 * window_size + 1), dim_hlayer],
+                                initializer=tf.contrib.layers.xavier_initializer(uniform=True,
+                                                                                 dtype=tf.float32))
 
-    w_z = tf.get_variable(name="w_z", shape=[dim_hlayer],
-                          initializer=tf.random_uniform_initializer(dtype=tf.float32))
+        w_z = tf.get_variable(name="w_z", shape=[dim_hlayer],
+                              initializer=tf.random_uniform_initializer(dtype=tf.float32))
 
-    v = tf.get_variable(name="v", shape=[dim_hlayer, 1],
-                        initializer=tf.random_uniform_initializer(dtype=tf.float32))
+        v = tf.get_variable(name="v", shape=[dim_hlayer, 1],
+                            initializer=tf.random_uniform_initializer(dtype=tf.float32))
 
-    W_hh = tf.get_variable(name="W_hh", shape=[2 * state_size * (2 * window_size + 1), state_size],
-                           initializer=tf.contrib.layers.xavier_initializer(uniform=True, dtype=tf.float32))
+        W_hh = tf.get_variable(name="W_hh", shape=[2 * state_size * (2 * window_size + 1), state_size],
+                               initializer=tf.contrib.layers.xavier_initializer(uniform=True, dtype=tf.float32))
 
-    w_h = tf.get_variable(name="w_h", shape=[state_size],
-                          initializer=tf.random_uniform_initializer(dtype=tf.float32))
+        w_h = tf.get_variable(name="w_h", shape=[state_size],
+                              initializer=tf.random_uniform_initializer(dtype=tf.float32))
 
     def conv_r(padded_matrix, r):
         """
@@ -245,14 +220,37 @@ class NEF():
         self.y = tf.placeholder(tf.int32, [self.batch_size, self.L, self.tag_emb_dim])  # Output Tags embeddings.
         self.lenghs = tf.placeholder(tf.int32, [None])  # Lengths of the sentences.
 
-        lstm_out, final_state, state_size = input_block(self.x, self.lenghs, self.drop, self.lstm_units)
-        self.sketches, cum_attentions = attention_block(lstm_out, state_size, self.window_size, self.dim_hlayer,
+        # Input block (A_Block)
+
+        with tf.name_scope("embedding"):
+            # dropout on embeddings
+            emb_drop = tf.nn.dropout(self.x, self.drop)
+
+        with tf.name_scope("Input"):
+            fw_cell = tf.nn.rnn_cell.LSTMCell(num_units=self.lstm_units, state_is_tuple=True)
+
+            with tf.name_scope("bi-lstm"):
+                bw_cell = tf.nn.rnn_cell.LSTMCell(num_units=self.lstm_units, state_is_tuple=True)
+
+                # dropout on lstm
+                # TODO make params, input is already dropped out
+                fw_cell = tf.nn.rnn_cell.DropoutWrapper(fw_cell, input_keep_prob=1, output_keep_prob=self.drop)
+                bw_cell = tf.nn.rnn_cell.DropoutWrapper(bw_cell, input_keep_prob=1, output_keep_prob=self.drop)
+
+                outputs, final_state = tf.nn.bidirectional_dynamic_rnn(fw_cell, bw_cell, emb_drop,
+                                                                       sequence_length=self.lenghs,
+                                                                       dtype=tf.float32, time_major=False)
+                outputs = tf.concat(outputs, 2)
+                state_size = 2 * self.lstm_units  # concat of fw and bw lstm output
+
+        # Attention block
+        self.sketches, cum_attentions = attention_block(outputs, state_size, self.window_size, self.dim_hlayer,
                                                         self.batch_size, self.activation, self.L, self.sketches_num,
                                                         self.attention_discount_factor,
                                                         self.attention_temperature)
 
         self.sketche = self.sketches[-1]  # last sketch
-        hs_final = tf.concat([lstm_out, self.sketche], axis=2)  # [batch_size, L, 2*state_size]
+        hs_final = tf.concat([outputs, self.sketche], axis=2)  # [batch_size, L, 2*state_size]
 
         with tf.name_scope("Out"):
             W_out = tf.get_variable(name="W_out", shape=[2*state_size, self.labels_num],
