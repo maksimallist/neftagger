@@ -170,12 +170,20 @@ print(cum_att)
 active_mask = tf.ones_like(input_tensor)
 non_active_mask = (tf.ones_like(input_tensor) - active_mask)
 
-constrained_weights, active_, not_active = csoftmax_paper(input, b, active_mask, non_active_mask, temperature)
+# constrained_weights, active_, not_active = csoftmax_paper(input, b, active_mask, non_active_mask, temperature)
+
+
+
+active_ = active_mask
+not_active_ = non_active_mask
+for i in range(5):
+    constrained_weights, active_, not_active_ = csoftmax_paper(input, b, active_, not_active_, temperature)
+
 
 with tf.Session() as sess:
     sess.run(tf.global_variables_initializer())
 
-    weights, mask, not_mask = sess.run([constrained_weights, active_, not_active],
+    weights, mask, not_mask = sess.run([constrained_weights, active_, not_active_],
                                        feed_dict={input: input_tensor, b: cum_att})
 
     print('csoftmax: \n{}'.format(weights), '\n')
