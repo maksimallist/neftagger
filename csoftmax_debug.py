@@ -45,7 +45,7 @@ def constrained_softmax(input_tensor, b, temp):
     return tensors
 
 
-def csoftmax_paper(input_tensor, b, temp):
+def csoftmax_(input_tensor, b, temp):
     """
     Compute the constrained softmax (csoftmax);
     See paper "Learning What's Easy: Fully Differentiable Neural Easy-First Taggers"
@@ -99,6 +99,56 @@ def csoftmax_paper(input_tensor, b, temp):
     return alpha
 
 
+def csoftmax_paper(input_tensor, b, active, non_active, temp):
+    """
+    Compute the constrained softmax (csoftmax);
+    See paper "Learning What's Easy: Fully Differentiable Neural Easy-First Taggers"
+    on https://andre-martins.github.io/docs/emnlp2017_final.pdf (page 4)
+
+    :param input_tensor: input tensor
+    :param b: cumulative attention see paper
+    :param temp: softmax temperature
+    :return: distribution
+    """
+
+    shape_t = input_tensor.shape
+    shape_b = b.shape
+    assert shape_b == shape_t
+
+    # mean
+    tensor = input_tensor - tf.reduce_mean(input_tensor, axis=1)
+    #
+    ones = tf.ones([shape_t[0]])
+    q = tf.exp(tensor)
+    u = tf.ones_like(b) - b
+
+    # calculate new distribution with attention on distribution 'b'
+    alpha = (q*active/temp)*(ones - tf.reduce_mean(u*non_active/temp, axis=1))/(tf.reduce_mean(q*active, axis=1))
+
+    # verification of the condition and modification of masks
+    t_mask = tf.to_float(tf.less_equal(alpha, u))
+    f_mask = tf.to_float(tf.less(u, alpha))
+
+    alpha = alpha * t_mask + u * f_mask
+
+    active = active - f_mask
+    non_active = non_active + f_mask
+
+    # tensors = dict()
+    # tensors['csoftmax'] = csoftmax
+    # tensors['t_mask'] = t_mask
+    # tensors['f_mask'] = f_mask
+    # tensors['A'] = A
+    # tensors['U'] = U
+    # tensors['a'] = a
+    # tensors['u'] = u
+    # tensors['z'] = z
+    # tensors['b'] = b
+    # tensors['input_tensor'] = input_tensor
+
+    return alpha, active, non_active
+
+
 state_size = 40
 dim_hlayer = 20
 window_size = 2
@@ -115,16 +165,22 @@ b = tf.placeholder(dtype=tf.float32, shape=[batch_size, L])
 input_tensor = np.random.randn(batch_size, L).astype(np.float32)
 cum_att = np.zeros((batch_size, L)).astype(np.float32)
 print('random tensor: \n{}'.format(input_tensor))
-# print(cum_att)
+print(cum_att)
 
-constrained_weights = csoftmax_paper(input, b, temperature)
+active_mask = tf.ones_like(input_tensor)
+non_active_mask = (tf.ones_like(input_tensor) - active_mask)
+
+constrained_weights, active_, not_active = csoftmax_paper(input, b, active_mask, non_active_mask, temperature)
 
 with tf.Session() as sess:
     sess.run(tf.global_variables_initializer())
 
-    results = sess.run(constrained_weights, feed_dict={input: input_tensor, b: cum_att})
+    weights, mask, not_mask = sess.run([constrained_weights, active_, not_active],
+                                       feed_dict={input: input_tensor, b: cum_att})
 
-    print('csoftmax: \n{}'.format(results), '\n')
+    print('csoftmax: \n{}'.format(weights), '\n')
+    print('active mask: \n{}'.format(mask), '\n')
+    print('non active mask: \n{}'.format(not_mask), '\n')
 
     # print('input cumulative attention: {}\n'.format(results['b']), '\n')
     # print('inverse cumulative attention: {}\n'.format(results['u']), '\n')

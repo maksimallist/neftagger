@@ -2,9 +2,6 @@ import numpy as np
 import tensorflow as tf
 
 
-# sess = tf.InteractiveSession()
-
-
 # Attention block
 def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_size,
                     activation, L, sketches_num, discount_factor, temperature):
@@ -56,9 +53,9 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
         hs = conv_r(hs, window_size)  # [batch_size, L, 2*state*(2*window_size + 1)]
         return hs
 
-    def sketch_step(tensor, cum_attention, temper):
+    def sketch_step(tensor, cum_attention, mask, neg_mask, temper):
 
-        def constrained_softmax(input_tensor, b, temp):
+        def csoftmax(input_tensor, b, active, non_active, temp):
             """
             Compute the constrained softmax (csoftmax);
             See paper "Learning What's Easy: Fully Differentiable Neural Easy-First Taggers"
@@ -70,19 +67,35 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
             :return: distribution
             """
 
-            # input_tensor = tf.reduce_mean(input_tensor)
-            z = tf.reduce_sum(tf.exp(input_tensor / temp), axis=1, keep_dims=True)
-            a = tf.exp(input_tensor / temp) * (b / temp) / z
-            # a = tf.exp(input_tensor/temp) * b / z
+            shape_t = input_tensor.shape
+            shape_b = b.shape
+            assert shape_b == shape_t
+
+            # mean
+            # tensor = input_tensor - tf.reduce_mean(input_tensor, axis=1)
+            tensor = input_tensor
+            #
+            ones = tf.ones([shape_t[0]])
+            q = tf.exp(tensor)
             u = tf.ones_like(b) - b
-            t_mask = tf.to_float(tf.less_equal(a, u))
-            f_mask = tf.to_float(tf.less(u, a))
-            A = a * t_mask
-            U = u * f_mask
 
-            csoftmax = A + U
+            # calculate new distribution with attention on distribution 'b'
+            A = (q * active / temp)
+            C = (ones - tf.reduce_mean(u * non_active / temp, axis=1))
+            Z = (tf.reduce_mean(q * active, axis=1))
 
-            return csoftmax
+            alpha = A * tf.reshape(C, [shape_t[0], 1]) / tf.reshape(Z, [shape_t[0], 1])
+
+            # verification of the condition and modification of masks
+            t_mask = tf.to_float(tf.less_equal(alpha, u))
+            f_mask = tf.to_float(tf.less(u, alpha))
+
+            alpha = alpha * t_mask + u * f_mask
+
+            active = active - f_mask
+            non_active = non_active + f_mask
+
+            return alpha, active, non_active
 
         def attention(t):
             before_att = activation(tf.matmul(t, W_hsz) + w_z)
@@ -93,7 +106,7 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
 
         attentions = tf.map_fn(attention, tensor, dtype=tf.float32)  # [batch_size, 1, L]
         attentions = tf.reshape(attentions, [batch_size, L]) - cum_attention*discount_factor  # [batch_size, L]
-        constrained_weights = constrained_softmax(attentions, cum_attention, temper)  # [batch_size, L]
+        constrained_weights, new_mask, new_neg_mask = csoftmax(attentions, cum_attention, mask, neg_mask, temper)  # [batch_size, L]
 
         tensor = tf.transpose(tensor, [1, 0, 2])
         cn = tf.reduce_sum(tensor*tf.expand_dims(constrained_weights, [2]), axis=1)  # [batch_size,
@@ -105,28 +118,38 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
         s = tf.matmul(tf.expand_dims(constrained_weights, [2]), tf.expand_dims(s, [1]))  # [batch_size, L,
         #  state_size]
 
-        return s, constrained_weights
+        return s, constrained_weights, new_mask, new_neg_mask
 
     sketch = tf.zeros(shape=[batch_size, L, state_size], dtype=tf.float32)  # sketch tenzor
     cum_att = tf.zeros(shape=[batch_size, L])  # cumulative attention
     padding_hs_col = tf.constant([[0, 0], [window_size, window_size], [0, 0]], name="padding_hs_col")
     temperature = tf.constant(temperature, dtype=tf.float32, name='attention_temperature')
+
+    mask_i = tf.ones([batch_size, L])
+    neg_mask_i = (tf.ones_like(mask_i) - mask_i)
+
     sketches = []
     cum_attentions = []
+    masks = []
 
     for i in range(sketches_num):
-        sketch_, cum_att_ = sketch_step(prepare_tensor(hidden_states, sketch, padding_hs_col), cum_att,
-                                        temperature)
+        masks.append((mask_i, neg_mask_i))
+        sketch_, cum_att_, mask_i, neg_mask_i = sketch_step(prepare_tensor(hidden_states, sketch, padding_hs_col),
+                                                            cum_att, mask_i, neg_mask_i, temperature)
         # print(cum_att_.eval(session=sess))
         sketch += sketch_
         cum_att += cum_att_
         sketches.append(sketch_)  # list of tensors with shape [batch_size, L, state_size]
         cum_attentions.append(cum_att_)  # list of tensors with shape [batch_size, L]
 
-    return sketches, cum_attentions
+        if tf.reduce_sum(mask_i) == 0:
+            break
+
+    return sketches, cum_attentions, masks
 
 
 hidden_states = tf.placeholder(dtype=tf.float32, shape=[100, 83, 40])
+b = tf.placeholder(dtype=tf.float32, shape=[100, 83])
 state_size = 40
 dim_hlayer = 20
 window_size = 2
@@ -137,18 +160,23 @@ sketches_num = 5
 discount_factor = 0
 temperature = 1
 
-input_tensor = np.random.randn(batch_size, L, state_size)
+input_tensor = np.random.randn(batch_size, L, state_size).astype(np.float32)
+cum_att = np.zeros((batch_size, L)).astype(np.float32)
 # print(input_tensor)
 
-sketch_list, cum_attention = attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_size,
-                                             activation, L, sketches_num, discount_factor, temperature)
+sketch_list, cum_attention, masks_ = attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_size,
+                                                     activation, L, sketches_num, discount_factor, temperature)
 
 with tf.Session() as sess:
     sess.run(tf.global_variables_initializer())
 
-    sketchs, cum_att = sess.run([sketch_list, cum_attention], feed_dict={hidden_states: input_tensor})
+    sketchs, cum_att, masks = sess.run([sketch_list, cum_attention, masks_], feed_dict={hidden_states: input_tensor, b: cum_att})
 
-    print(cum_att)
-    print(sketchs[0].shape)
-    print(len(sketchs))
+    for i, m in enumerate(masks):
+        print('active mask {0}:\n{1}\n'.format(i+1, m[0]))
+        print('not active mask {0}:\n{1}\n'.format(i+1, m[1]))
+
+    # print(cum_att[-2])
+    # print(sketchs[-2])
+    # print(len(sketchs))
 
