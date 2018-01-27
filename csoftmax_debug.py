@@ -173,18 +173,34 @@ non_active_mask = (tf.ones_like(input_tensor) - active_mask)
 # constrained_weights, active_, not_active = csoftmax_paper(input, b, active_mask, non_active_mask, temperature)
 
 
+def iter(n, t, b, m, nm, temp):
+    active_i = m
+    not_active_i = nm
 
-active_ = active_mask
-not_active_ = non_active_mask
-for i in range(5):
-    constrained_weights, active_, not_active_ = csoftmax_paper(input, b, active_, not_active_, temperature)
+    a_mask = []
+    n_mask = []
+    weights = []
 
+    for i in range(n):
+        constrained_weights, active_i, not_active_i = csoftmax_paper(t, b, active_i, not_active_i, temp)
+        weights.append(constrained_weights)
+        a_mask.append(active_i)
+        n_mask.append(not_active_i)
+
+        b += constrained_weights
+
+        if tf.reduce_sum(active_i != 0):
+            break
+
+    return weights, a_mask, n_mask
+
+
+w, am, nm = iter(5, input, b, active_mask, non_active_mask, temperature)
 
 with tf.Session() as sess:
     sess.run(tf.global_variables_initializer())
 
-    weights, mask, not_mask = sess.run([constrained_weights, active_, not_active_],
-                                       feed_dict={input: input_tensor, b: cum_att})
+    weights, mask, not_mask = sess.run([w, am, nm], feed_dict={input: input_tensor, b: cum_att})
 
     print('csoftmax: \n{}'.format(weights), '\n')
     print('active mask: \n{}'.format(mask), '\n')
