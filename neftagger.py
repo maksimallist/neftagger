@@ -8,7 +8,7 @@ import tensorflow as tf
 import utils
 
 # OLD BLOCK
-# # Attention block
+# Attention block
 # def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_size,
 #                     activation, L, sketches_num, discount_factor, temperature):
 #
@@ -133,8 +133,7 @@ import utils
 #     return sketches, cum_attentions
 
 
-# NEW BLOCK
-# Attention block
+# New Attention block
 def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_size,
                     activation, L, sketches_num, discount_factor, temperature):
 
@@ -204,19 +203,21 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
             assert shape_b == shape_t
 
             # mean
-            # tensor = input_tensor - tf.reduce_mean(input_tensor, axis=1)
-            tensor = input_tensor
+            tensor = input_tensor - tf.reduce_mean(input_tensor, axis=1, keep_dims=True)
             #
-            ones = tf.ones([shape_t[0]])
+            ones = tf.ones([shape_t[0], 1])
             q = tf.exp(tensor)
             u = tf.ones_like(b) - b
 
             # calculate new distribution with attention on distribution 'b'
-            A = (q * active / temp)
-            C = (ones - tf.reduce_mean(u * non_active / temp, axis=1))
-            Z = (tf.reduce_mean(q * active, axis=1))
+            a = q*active
+            z = tf.reduce_mean(q*active, axis=1, keep_dims=True)
+            f = ones - tf.reduce_mean(u*non_active, axis=1, keep_dims=True)
 
-            alpha = A * tf.reshape(C, [shape_t[0], 1]) / tf.reshape(Z, [shape_t[0], 1])
+            z_mask = tf.cast(tf.less_equal(z, tf.zeros_like(z)), dtype=tf.float32)
+            z = z + z_mask
+
+            alpha = a*f/z
 
             # verification of the condition and modification of masks
             t_mask = tf.to_float(tf.less_equal(alpha, u))
@@ -262,8 +263,10 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
 
     sketches = []
     cum_attentions = []
+    # masks = []
 
     for i in range(sketches_num):
+        # masks.append((mask_i, neg_mask_i))
         sketch_, cum_att_, mask_i, neg_mask_i = sketch_step(prepare_tensor(hidden_states, sketch, padding_hs_col),
                                                             cum_att, mask_i, neg_mask_i, temperature)
         # print(cum_att_.eval(session=sess))
@@ -272,8 +275,8 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
         sketches.append(sketch_)  # list of tensors with shape [batch_size, L, state_size]
         cum_attentions.append(cum_att_)  # list of tensors with shape [batch_size, L]
 
-        # if tf.reduce_sum(mask_i) == 0:
-        #     break
+        if tf.reduce_mean(mask_i) == 0:
+            break
 
     return sketches, cum_attentions
 
