@@ -46,11 +46,11 @@ parameters['learning_rate'] = 0.001  # Learning rate.
 parameters['optimizer'] = "adam"  # Optimizer [sgd, adam, adagrad, adadelta, momentum]
 parameters['batch_size'] = 100  # Batch size to use during training.
 parameters['activation'] = 'tanh'  # activation function for dense layers in net
-parameters['sketches_num'] = 1  # number of sketches
+parameters['sketches_num'] = 5  # number of sketches
 parameters['lstm_units'] = 20  # number of LSTM-RNN encoder units
 parameters['dim_hlayer'] = 20  # dimensionality of hidden layer
 parameters['window'] = 2  # context size
-parameters['attention_discount_factor'] = 0.0  # Attention discount factor
+parameters['attention_discount_factor'] = 0.1  # Attention discount factor
 parameters['attention_temperature'] = 1.0  # Attention temperature
 parameters['drop_prob'] = 0.3  # keep probability for dropout during training (1: no dropout)
 parameters['drop_prob_sketch'] = 1  # keep probability for dropout during sketching (1: no dropout)
@@ -61,7 +61,7 @@ parameters['track_sketches'] = False  #
 parameters['full_model'] = True
 
 # TODO: parametrization
-parameters['maximum_L'] = 124  # maximum length of sequences
+parameters['maximum_L'] = 83  # maximum length of sequences
 parameters['mode'] = 'train'
 
 train_flag = dict()

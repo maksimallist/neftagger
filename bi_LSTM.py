@@ -230,22 +230,22 @@ class bi_LSTM():
             b_out = tf.get_variable(name="w_out", shape=[self.labels_num],
                                     initializer=tf.random_uniform_initializer(dtype=tf.float32))
 
-            # def score(hs_j):
-            #     """
-            #     Score the word at index j, returns state vector for this word (column) across batch
-            #     """
-            #     # l = tf.matmul(tf.reshape(hs_j, [self.batch_size, state_size]), W_out) + b_out
-            #     l = tf.matmul(hs_j, W_out) + b_out
-            #
-            #     return l  # [batch_size; labels_num]
+            def score(hs_j):
+                """
+                Score the word at index j, returns state vector for this word (column) across batch
+                """
+                # l = tf.matmul(tf.reshape(hs_j, [self.batch_size, state_size]), W_out) + b_out
+                l = tf.matmul(hs_j, W_out) + b_out
+
+                return l  # [batch_size; labels_num]
 
             def score_predict_loss(score_input):
                 """
                 Predict a label for an input, compute the loss and return label and loss
                 """
                 [hs_i, y_words] = score_input
-                # word_label_score = score(hs_i)
-                word_label_score = tf.matmul(hs_i, W_out) + b_out
+                word_label_score = score(hs_i)
+                # word_label_score = tf.matmul(hs_i, W_out) + b_out
                 word_label_probs = tf.nn.softmax(word_label_score)
                 word_preds = tf.argmax(word_label_probs, 1)
                 word_preds = tf.cast(word_preds, dtype=tf.float32)

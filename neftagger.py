@@ -374,7 +374,7 @@ class NEF():
 
         # network graph
         self.x = tf.placeholder(tf.float32, [self.batch_size, self.L, self.embeddings_dim])  # Input Text embeddings.
-        self.y = tf.placeholder(tf.int32, [self.batch_size, self.L, self.tag_emb_dim])  # Output Tags embeddings.
+        self.y = tf.placeholder(tf.int32, [self.batch_size, self.L])  # Output Tags embeddings.
 
         # Input block (A_Block)
 
@@ -419,41 +419,35 @@ class NEF():
             b_out = tf.get_variable(name="w_out", shape=[self.labels_num],
                                     initializer=tf.random_uniform_initializer(dtype=tf.float32))
 
-            def score(hs_j):
-                """
-                Score the word at index j, returns state vector for this word (column) across batch
-                """
-                l = tf.matmul(tf.reshape(hs_j, [self.batch_size, 2 * state_size]), W_out) + b_out
-
-                return l  # batch_size x K
-
             def score_predict_loss(score_input):
                 """
                 Predict a label for an input, compute the loss and return label and loss
                 """
                 [hs_i, y_words] = score_input
-                word_label_score = score(hs_i)
+                word_label_score = tf.matmul(hs_i, W_out) + b_out
                 word_label_probs = tf.nn.softmax(word_label_score)
                 word_preds = tf.argmax(word_label_probs, 1)
+                word_preds = tf.cast(word_preds, dtype=tf.float32)
 
                 # TODO maybe input only sorted number of tags ?
-                # y_words_full = tf.one_hot(tf.squeeze(y_words), depth=self.labels_num, on_value=1.0, off_value=0.0)
-                cross_entropy = tf.nn.softmax_cross_entropy_with_logits(labels=y_words, logits=word_label_score)
+                y_words_full = tf.one_hot(tf.squeeze(y_words), depth=self.labels_num, on_value=1.0, off_value=0.0,
+                                          dtype=tf.float32)
+                cross_entropy = tf.nn.softmax_cross_entropy_with_logits(labels=y_words_full, logits=word_label_score)
                 return [word_preds, cross_entropy]
 
-            # calculate prediction scores iteratively on "L" axis
-            scores_pred = tf.map_fn(score_predict_loss,
-                                    [tf.transpose(hs_final, [1, 0, 2]),
-                                     tf.cast(tf.transpose(self.y, [1, 0, 2]), tf.float32)],
-                                    dtype=[tf.int64, tf.float32])  # why tf.int64 ?
+            hs_final = tf.transpose(hs_final, [1, 0, 2])  # [L; batch_size; state]
+            self.labels = tf.transpose(self.y, [1, 0])  # [L; batch_size]
 
-            self.pred_labels = scores_pred[0]
-            self.pred_labels = tf.transpose(self.pred_labels, [1, 0])
-            self.losses = scores_pred[1]
+            # calculate prediction scores iteratively on "L" axis
+            scores_pred = tf.map_fn(score_predict_loss, [hs_final, self.labels], dtype=[tf.float32, tf.float32])
+
+            self.pred_labels = tf.transpose(scores_pred[0], [1, 0])
+            # self.pred_labels = tf.transpose(self.pred_labels, [1, 0])
+            self.losses = scores_pred[1]  # [batch_size]
 
             # masked, batch_size x 1 (regularization like dropout but mask)
             # losses = tf.reduce_mean(tf.cast(mask, tf.float32) * tf.transpose(losses, [1, 0]), 1)
-            self.losses_reg = tf.reduce_mean(tf.transpose(self.losses, [1, 0]), 1)
+            self.losses_reg = tf.reduce_mean(self.losses)  # scalar
 
         # regularization
         with tf.variable_scope('sketch', reuse=tf.AUTO_REUSE):
@@ -473,7 +467,7 @@ class NEF():
         if self.mode == 'train':
             train_params = tf.trainable_variables()
 
-            self.losses_reg = tf.reduce_mean(self.losses_reg, 0)
+            # self.losses_reg = tf.reduce_mean(self.losses_reg, 0)
             gradients = tf.gradients(self.losses_reg, train_params)  # batch normalization
             if self.max_gradient_norm > -1:
                 clipped_gradients, norm = tf.clip_by_global_norm(gradients, self.max_gradient_norm)
@@ -491,9 +485,15 @@ class NEF():
 
         # sent_num = len(example)
         # assert sent_num <= self.batch_size
+        batch_size = len(example)
+        L = max([len(sent) for sent in example])
 
         x = np.zeros((self.batch_size, self.L, self.embeddings_dim))
-        y = np.zeros((self.batch_size, self.L, self.tag_emb_dim))
+        y = np.zeros((self.batch_size, self.L))
+
+        # x_mask = np.zeros([batch_size, L], dtype=np.float32)
+        # for n in range(batch_size):
+        #     x_mask[n, :len(example[n])] = 1
 
         for i, sent in enumerate(example):
             for j, z in enumerate(sent):
@@ -507,10 +507,10 @@ class NEF():
         x, y = self.tensorize_example(example)
 
         pred_labels, losses, _, cum_att = sess.run([self.pred_labels, self.losses_reg, self.update, self.cum_att_last],
-                                                    feed_dict={self.x: x, self.y: y})
+                                                   feed_dict={self.x: x, self.y: y})
 
-        print(cum_att, '\n')
-        print(pred_labels, '\n')
+        # print(cum_att, '\n')
+        # print(pred_labels, '\n')
 
         return pred_labels, losses
 
