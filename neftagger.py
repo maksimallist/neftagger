@@ -133,9 +133,9 @@ import utils
 #     return sketches, cum_attentions
 
 
-# New Attention block
+# Attention block
 def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_size,
-                    activation, L, sketches_num, discount_factor, temperature):
+                    activation, L, sketches_num, discount_factor, temperature, full_model):
 
     with tf.variable_scope('loop_matrices', reuse=tf.AUTO_REUSE):
         W_hsz = tf.get_variable(name="W_hsz", shape=[2 * state_size * (2 * window_size + 1), dim_hlayer],
@@ -184,101 +184,105 @@ def attention_block(hidden_states, state_size, window_size, dim_hlayer, batch_si
         hs = conv_r(hs, window_size)  # [batch_size, L, 2*state*(2*window_size + 1)]
         return hs
 
-    def sketch_step(tensor, cum_attention, mask, neg_mask, temper):
+    def sketch_step(tensor, cum_attention, active_mask, temper):
 
-        def csoftmax(input_tensor, b, active, non_active, temp):
+        def csoftmax(ten, u, mask):
             """
             Compute the constrained softmax (csoftmax);
             See paper "Learning What's Easy: Fully Differentiable Neural Easy-First Taggers"
             on https://andre-martins.github.io/docs/emnlp2017_final.pdf (page 4)
 
-            :param input_tensor: input tensor
-            :param b: cumulative attention see paper
-            :param temp: softmax temperature
+            :param ten: input tensor
+            :param u: cumulative attention see paper
+            :param mask: mask with active elements
             :return: distribution
             """
 
-            shape_t = input_tensor.shape
-            shape_b = b.shape
-            assert shape_b == shape_t
+            shape_t = ten.shape
+            shape_u = u.shape
+            assert shape_u == shape_t
 
             # mean
-            tensor = input_tensor - tf.reduce_mean(input_tensor, axis=1, keep_dims=True)
-            #
-            ones = tf.ones([shape_t[0], 1])
-            q = tf.exp(tensor)
-            u = tf.ones_like(b) - b
+            ten = ten - tf.reduce_mean(ten, axis=1, keep_dims=True)
+
+            neg_mask = tf.ones_like(mask) - mask
 
             # calculate new distribution with attention on distribution 'b'
-            a = q*active
-            z = tf.reduce_mean(q*active, axis=1, keep_dims=True)
-            f = ones - tf.reduce_mean(u*non_active, axis=1, keep_dims=True)
+            Q = tf.exp(ten)
+            Z = tf.reduce_sum(Q*mask, axis=1, keep_dims=True)/(tf.ones(shape=[shape_t[0], 1]) -
+                                                               tf.reduce_sum(neg_mask*u, axis=1, keep_dims=True))
 
-            z_mask = tf.cast(tf.less_equal(z, tf.zeros_like(z)), dtype=tf.float32)
-            z = z + z_mask
+            # war with NaN and inf
+            z_mask = tf.cast(tf.less_equal(Z, tf.zeros_like(Z)), dtype=tf.float32)
+            Z = Z + z_mask
 
-            alpha = a*f/z
+            A = Q / Z
 
             # verification of the condition and modification of masks
-            t_mask = tf.to_float(tf.less_equal(alpha, u))
-            f_mask = tf.to_float(tf.less(u, alpha))
+            t_mask = tf.to_float(tf.less_equal(A, u))
+            f_mask = tf.to_float(tf.less(u, A))
 
-            alpha = alpha * t_mask + u * f_mask
+            alpha = A * t_mask + u * f_mask
 
-            active = active - f_mask
-            non_active = non_active + f_mask
+            mask = mask * t_mask
 
-            return alpha, active, non_active
+            return alpha, mask
 
         def attention(t):
             before_att = activation(tf.matmul(t, W_hsz) + w_z)
             att = tf.matmul(before_att, v)  # [batch_size, 1]
             return att
 
-        tensor = tf.transpose(tensor, [1, 0, 2])
+        tensor = tf.transpose(tensor, [1, 0, 2])  # [L; batch_size; 2*state_size*(2*window_size + 1)]
 
-        attentions = tf.map_fn(attention, tensor, dtype=tf.float32)  # [batch_size, 1, L]
+        attentions = tf.map_fn(attention, tensor, dtype=tf.float32)  # [L, batch_size, 1]
         attentions = tf.reshape(attentions, [batch_size, L]) - cum_attention*discount_factor  # [batch_size, L]
-        constrained_weights, new_mask, new_neg_mask = csoftmax(attentions, cum_attention, mask, neg_mask, temper)  # [batch_size, L]
 
-        tensor = tf.transpose(tensor, [1, 0, 2])
-        cn = tf.reduce_sum(tensor*tf.expand_dims(constrained_weights, [2]), axis=1)  # [batch_size,
-        #  2*state_size*(2*window_size + 1)]
-        cn = tf.reshape(cn, [batch_size, 2*state_size*(2*window_size + 1)])  # [batch_size,
-        #  2*state_size*(2*window_size + 1)]
-        s = activation(tf.matmul(cn, W_hh) + w_h)  # [batch_size, state_size]
+        U = tf.ones_like(cum_attention) - cum_attention
+        constrained_weights, new_mask = csoftmax(attentions, U, active_mask)  # [batch_size, L]
 
-        s = tf.matmul(tf.expand_dims(constrained_weights, [2]), tf.expand_dims(s, [1]))  # [batch_size, L,
-        #  state_size]
+        tensor = tf.transpose(tensor, [1, 0, 2])  # [batch_size; L; 2*state_size*(2*window_size + 1)]
 
-        return s, constrained_weights, new_mask, new_neg_mask
+        if not full_model:
+            # TODO: check
+            cn = tf.reduce_sum(tensor*tf.expand_dims(constrained_weights, [2]), axis=1)  # [batch_size,
+            #  2*state_size*(2*window_size + 1)]
+            cn = tf.reshape(cn, [batch_size, 2*state_size*(2*window_size + 1)])  # [batch_size,
+            #  2*state_size*(2*window_size + 1)]
+            s = activation(tf.matmul(cn, W_hh) + w_h)  # [batch_size, state_size]
+
+            s = tf.matmul(tf.expand_dims(constrained_weights, [2]), tf.expand_dims(s, [1]))  # [batch_size, L,
+            #  state_size]
+        else:
+            def out_layer(slice):
+                out = activation(tf.matmul(slice, W_hh) + w_h)
+                return out
+
+            tensor = tf.transpose(tensor, [1, 0, 2])  # [L; batch_size; 2*state_size*(2*window_size + 1)]
+            s = tf.map_fn(out_layer, tensor, dtype=tf.float32)  # [L; batch_size; state_size]
+            s = tf.transpose(s, [1, 0, 2])  # [batch_size; L; state_size]
+            s = tf.expand_dims(constrained_weights, [2]) * s
+
+        return s, constrained_weights, new_mask
 
     sketch = tf.zeros(shape=[batch_size, L, state_size], dtype=tf.float32)  # sketch tenzor
     cum_att = tf.zeros(shape=[batch_size, L])  # cumulative attention
+
     padding_hs_col = tf.constant([[0, 0], [window_size, window_size], [0, 0]], name="padding_hs_col")
     temperature = tf.constant(temperature, dtype=tf.float32, name='attention_temperature')
 
-    mask_i = tf.ones([batch_size, L])
-    neg_mask_i = (tf.ones_like(mask_i) - mask_i)
-
-    sketches = []
-    cum_attentions = []
-    # masks = []
+    a_mask = tf.ones([batch_size, L])
 
     for i in range(sketches_num):
-        # masks.append((mask_i, neg_mask_i))
-        sketch_, cum_att_, mask_i, neg_mask_i = sketch_step(prepare_tensor(hidden_states, sketch, padding_hs_col),
-                                                            cum_att, mask_i, neg_mask_i, temperature)
-        # print(cum_att_.eval(session=sess))
+
+        sketch_, cum_att_, mask_i = sketch_step(prepare_tensor(hidden_states, sketch, padding_hs_col),
+                                                cum_att, a_mask, temperature)
+
         sketch += sketch_
         cum_att += cum_att_
-        sketches.append(sketch_)  # list of tensors with shape [batch_size, L, state_size]
-        cum_attentions.append(cum_att_)  # list of tensors with shape [batch_size, L]
+        a_mask = mask_i
 
-        if tf.reduce_mean(mask_i) == 0:
-            break
-
-    return sketches, cum_attentions
+    return sketch, cum_att
 
 
 class NEF():
@@ -287,6 +291,7 @@ class NEF():
         config = tf.ConfigProto()
         config.gpu_options.per_process_gpu_memory_fraction = 0.8
 
+        self.full_model = params['full_model']
         self.L = params['maximum_L']
         self.labels_num = params['labels_num']
         self.embeddings_dim = params['embeddings_dim']
@@ -394,16 +399,18 @@ class NEF():
                 state_size = 2 * self.lstm_units  # concat of fw and bw lstm output
 
         # Attention block
-        self.sketches, cum_attentions = attention_block(outputs, state_size, self.window_size, self.dim_hlayer,
-                                                        self.batch_size, self.activation, self.L, self.sketches_num,
-                                                        self.attention_discount_factor,
-                                                        self.attention_temperature)
+        self.sketche, self.cum_att_last = attention_block(outputs,
+                                                          state_size,
+                                                          self.window_size,
+                                                          self.dim_hlayer,
+                                                          self.batch_size,
+                                                          self.activation,
+                                                          self.L,
+                                                          self.sketches_num,
+                                                          self.attention_discount_factor,
+                                                          self.attention_temperature,
+                                                          self.full_model)
 
-        ######################################
-        self.cum_att_last = cum_attentions[0]
-        ######################################
-
-        self.sketche = self.sketches[-1]  # last sketch
         hs_final = tf.concat([outputs, self.sketche], axis=2)  # [batch_size, L, 2*state_size]
 
         with tf.name_scope("Out"):
@@ -438,7 +445,7 @@ class NEF():
             scores_pred = tf.map_fn(score_predict_loss,
                                     [tf.transpose(hs_final, [1, 0, 2]),
                                      tf.cast(tf.transpose(self.y, [1, 0, 2]), tf.float32)],
-                                    dtype=[tf.int64, tf.float32])  # elems are unpacked along dim 0 -> L
+                                    dtype=[tf.int64, tf.float32])  # why tf.int64 ?
 
             self.pred_labels = scores_pred[0]
             self.pred_labels = tf.transpose(self.pred_labels, [1, 0])
@@ -513,7 +520,7 @@ class NEF():
 
         if sketch_:
             if all_:
-                pred_labels, sketch = sess.run([self.pred_labels, self.sketches],
+                pred_labels, sketch = sess.run([self.pred_labels, self.sketche],
                                                feed_dict={self.x: x, self.y: y})
             else:
                 pred_labels, sketch = sess.run([self.pred_labels, self.sketche],

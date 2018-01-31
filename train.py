@@ -58,6 +58,7 @@ parameters["l2_scale"] = 0  # "L2 regularization constant"
 parameters["l1_scale"] = 0  # "L1 regularization constant"
 parameters["max_gradient_norm"] = -1  # "maximum gradient norm for clipping (-1: no clipping)"
 parameters['track_sketches'] = False  #
+parameters['full_model'] = True
 
 # TODO: parametrization
 parameters['maximum_L'] = 124  # maximum length of sequences
