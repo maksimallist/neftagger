@@ -141,6 +141,7 @@ def train(generator, param, flags):
 
         # start learning
         start_learning = time.time()
+        max_f1 = 0
         for e in range(flags['epochs']):
             gen = generator(train_data, param['batch_size'], 0)
 
@@ -171,26 +172,13 @@ def train(generator, param, flags):
                 if not param['crf']:
                     conllf1 = precision_recall_f1(m_true, m_pred)
 
-                # print('[ Validation on {}: ... ]'.format(join(flags['data_dir'], 'russian_dev.txt')))
-                # dev_predictions = []
-                # dev_true = []
-                # for data, i in gen_dev:
-                #     pred_labels = model.inference_op(data, sess)
-                #     dev_predictions.extend(pred_labels)
-                #     y_dev = refactor_data(data, tag_vocabulary, [param['batch_size'], param['maximum_L']])
-                #     dev_true.extend(y_dev)
-                #
-                # acc = accuracy(dev_true, dev_predictions)
-                # print('[accuracy = {}]\n'.format(acc))
-                #
-                # f1_nof1, f1_nof2 = f1s_binary(dev_true, dev_predictions)
-                # print('[ Non official f1 (1): {} ]\n'.format(f1_nof1))
-                # print('[ Non official f1 (2): {} ]\n'.format(f1_nof2))
+                if conllf1['__total__']['f1'] > max_f1:
+                    max_f1 = conllf1['__total__']['f1']
 
-            if e % flags['checkpoint_freq'] == 0:
-                if not os.path.isdir(flags['checkpoint_dir']):
-                    os.makedirs(flags['checkpoint_dir'])
-                model.save(sess, flags['checkpoint_dir'])
+                    if not os.path.isdir(flags['checkpoint_dir']):
+                        os.makedirs(flags['checkpoint_dir'])
+
+                    model.save(sess, flags['checkpoint_dir'])
 
         print('[ End. Global Time: {} ]\n'.format(time.time() - start_learning))
 
