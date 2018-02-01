@@ -164,11 +164,10 @@ def train(generator, param, flags):
                 else:
                     losses = model.train_op(data, sess)
 
-                # TODO fix it
-                if i % 20:
+                if i % 20 == 0:
                     print('[ Epoch {0}; Loss: {1} ]'.format(e, losses))
 
-            if e % 5:
+            if e % 5 == 0:
                 if not param['crf']:
                     conllf1 = precision_recall_f1(m_true, m_pred)
 
