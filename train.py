@@ -63,11 +63,11 @@ parameters["l2_scale"] = 0  # "L2 regularization constant"
 parameters["l1_scale"] = 0  # "L1 regularization constant"
 parameters["max_gradient_norm"] = -1  # "maximum gradient norm for clipping (-1: no clipping)"
 # parameters['track_sketches'] = False  #
-parameters['full_model'] = False
+parameters['full_model'] = True
 parameters['crf'] = False
 
 # TODO: parametrization
-parameters['maximum_L'] = 83  # maximum length of sequences
+parameters['maximum_L'] = 124  # maximum length of sequences
 parameters['mode'] = 'train'
 
 train_flag = dict()
@@ -113,6 +113,16 @@ def convert(tensor, tags):
 # list of sentences; sentence is a list if tuples with word and tag
 train_data = read_dataset(join(train_flag['data_dir'], 'train.txt'),
                           parameters['maximum_L'], split=False)
+
+test_data = read_dataset(join(train_flag['data_dir'], 'test.txt'),
+                         parameters['maximum_L'], split=False)
+
+if 'dev.txt' not in os.listdir(train_flag['data_dir']):
+    dev_data = read_dataset(join(train_flag['data_dir'], 'valid.txt'),
+                            parameters['maximum_L'], split=False)
+else:
+    dev_data = read_dataset(join(train_flag['data_dir'], 'dev.txt'),
+                            parameters['maximum_L'], split=False)
 
 tag_vocabulary, i2t = create_vocabulary(train_data)
 parameters['labels_num'] = len(tag_vocabulary.keys())  # number of labels
@@ -189,10 +199,65 @@ def train(generator, param, flags):
     return None
 
 
+def test(generator, param, flags):
+
+    with tf.Session() as sess:
+        # create model
+        model = NEF(param, tag_vocabulary)
+        # model.load(sess, flags['checkpoint_dir'])
+
+        # print config
+        print('model was restore from: {}'.format(flags['checkpoint_dir']))
+        print(model.config)
+        sess.run(tf.global_variables_initializer())
+
+        # start testing
+        start_testing = time.time()
+
+        gen = generator(test_data, param['batch_size'], 0)
+        gen_dev = generator(dev_data, param['batch_size'], 0)
+
+        print('[ Testing on {}: ... ]'.format(join(flags['data_dir'], 'russian_test.txt')))
+        m_pred = []
+        m_true = []
+        for data, i in gen:
+            if not param['crf']:
+                pred_labels = model.inference_op(data, sess)
+                mpr = convert(pred_labels, i2t)
+                m_pred.extend(mpr)
+
+                y = refactor_data(data, tag_vocabulary, [param['batch_size'], param['maximum_L']])
+                mtr = convert(y, i2t)
+                m_true.extend(mtr)
+            else:
+                raise ValueError('It is testing!!! No SRF!')
+
+        conllf1 = precision_recall_f1(m_true, m_pred)
+
+        print('[ Testing on {}: ... ]'.format(join(flags['data_dir'], 'russian_dev.txt')))
+        dev_predictions = []
+        dev_true = []
+        for data, i in gen_dev:
+            pred_labels = model.inference_op(data, sess)
+            mdf = convert(pred_labels, i2t)
+            dev_predictions.extend(mdf)
+            y_dev = refactor_data(data, tag_vocabulary, [param['batch_size'], param['maximum_L']])
+            mdt = convert(y_dev, i2t)
+            dev_true.extend(mdt)
+
+        conllf1 = precision_recall_f1(dev_true, dev_predictions)
+
+        print('[ End. Global Time: {} ]\n'.format(time.time() - start_testing))
+
+    tf.reset_default_graph()
+
+    return None
+
+
 def main(_):
 
     train(batch_generator, parameters, train_flag)
-    # test(batch_generator, parameters, train_flag, train_flag['checkpoint_dir'])
+    test(batch_generator, parameters, train_flag)
     # doc_inference(join(train_flag['data_dir'], 'russian_dev.txt'), batch_generator, parameters,
     #               train_flag, train_flag['checkpoint_dir'])
 

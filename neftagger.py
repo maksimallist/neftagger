@@ -181,14 +181,14 @@ class NEF():
         x = np.zeros((self.batch_size, self.max_l, self.embeddings_dim))
         y = np.zeros((self.batch_size, self.max_l))
         x_mask = np.zeros([self.batch_size, self.max_l], dtype=np.float32)
-        for n in range(self.batch_size):
-            x_mask[n, :len(example[n])] = 1
+
+        for i, sent in enumerate(example):
+            x_mask[i, :len(sent)] = 1
 
         for i, sent in enumerate(example):
             for j, z in enumerate(sent):
                 x[i, j] = self.word_emb[z[0]]  # words
-                if mode == 'train':
-                    y[i, j] = self.tag_emb[z[1]]  # tags
+                y[i, j] = self.tag_emb[z[1]]  # tags
 
         return x, y, x_mask
 
