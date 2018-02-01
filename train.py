@@ -5,7 +5,7 @@ from neftagger import NEF
 import time
 from os.path import join
 from utils import read_dataset, create_vocabulary
-from utils import accuracy, f1s_binary, precision_recall_f1
+from utils import precision_recall_f1
 import sys
 
 name = sys.argv[1]
@@ -46,9 +46,14 @@ parameters['learning_rate'] = 0.001  # Learning rate.
 parameters['optimizer'] = "adam"  # Optimizer [sgd, adam, adagrad, adadelta, momentum]
 parameters['batch_size'] = 100  # Batch size to use during training.
 parameters['activation'] = 'tanh'  # activation function for dense layers in net
-parameters['sketches_num'] = 5  # number of sketches
-parameters['lstm_units'] = 20  # number of LSTM-RNN encoder units
-parameters['dim_hlayer'] = 20  # dimensionality of hidden layer
+parameters['sketches_num'] = 10  # number of sketches
+parameters['preattention_layer'] = 100  # dimensionality of hidden layer
+parameters['sketch_dim'] = 2*256
+
+parameters['unit_tipe'] = 'gru'
+parameters['number_of_units'] = (128, 256)  # number of RNN encoder units
+parameters['rnn_layers'] = 2
+
 parameters['window'] = 2  # context size
 parameters['attention_discount_factor'] = 0.1  # Attention discount factor
 parameters['attention_temperature'] = 1.0  # Attention temperature
@@ -57,8 +62,9 @@ parameters['drop_prob_sketch'] = 1  # keep probability for dropout during sketch
 parameters["l2_scale"] = 0  # "L2 regularization constant"
 parameters["l1_scale"] = 0  # "L1 regularization constant"
 parameters["max_gradient_norm"] = -1  # "maximum gradient norm for clipping (-1: no clipping)"
-parameters['track_sketches'] = False  #
-parameters['full_model'] = True
+# parameters['track_sketches'] = False  #
+parameters['full_model'] = False
+parameters['crf'] = False
 
 # TODO: parametrization
 parameters['maximum_L'] = 83  # maximum length of sequences
@@ -108,16 +114,6 @@ def convert(tensor, tags):
 train_data = read_dataset(join(train_flag['data_dir'], 'train.txt'),
                           parameters['maximum_L'], split=False)
 
-if 'dev.txt' not in os.listdir(train_flag['data_dir']):
-    dev_data = read_dataset(join(train_flag['data_dir'], 'valid.txt'),
-                            parameters['maximum_L'], split=False)
-else:
-    dev_data = read_dataset(join(train_flag['data_dir'], 'dev.txt'),
-                            parameters['maximum_L'], split=False)
-
-test_data = read_dataset(join(train_flag['data_dir'], 'test.txt'),
-                         parameters['maximum_L'], split=False)
-
 tag_vocabulary, i2t = create_vocabulary(train_data)
 parameters['labels_num'] = len(tag_vocabulary.keys())  # number of labels
 parameters['tag_emb_dim'] = len(tag_vocabulary.keys())
@@ -127,63 +123,59 @@ def train(generator, param, flags):
 
     with tf.Session() as sess:
         # create model
-        model = NEF(param, tag_vocabulary, i2t)
+        model = NEF(param, tag_vocabulary)
 
         # print config
-        print(model.path)
+        print(model.config)
         sess.run(tf.global_variables_initializer())
 
         # start learning
         start_learning = time.time()
         for e in range(flags['epochs']):
             gen = generator(train_data, param['batch_size'], 0)
-            gen_dev = generator(dev_data, param['batch_size'], 0)
 
             train_predictions = []
             train_true = []
             m_pred = []
             m_true = []
-            start = time.time()
 
             for data, i in gen:
-                pred_labels, losses = model.train_op(data, sess)
-                train_predictions.extend(pred_labels)
-                mpr = convert(pred_labels, i2t)
-                m_pred.extend(mpr)
+                if not param['crf']:
+                    pred_labels, losses = model.train_op(data, sess)
+                    train_predictions.extend(pred_labels)
+                    mpr = convert(pred_labels, i2t)
+                    m_pred.extend(mpr)
 
-                y = refactor_data(data, tag_vocabulary, [param['batch_size'], param['maximum_L']])
-                train_true.extend(y)
-                mtr = convert(y, i2t)
-                m_true.extend(mtr)
+                    y = refactor_data(data, tag_vocabulary, [param['batch_size'], param['maximum_L']])
+                    train_true.extend(y)
+                    mtr = convert(y, i2t)
+                    m_true.extend(mtr)
+                else:
+                    losses = model.train_op(data, sess)
+
                 # TODO fix it
                 if i % 20:
                     print('[ Epoch {0}; Loss: {1} ]'.format(e, losses))
 
-            result = dict()
-            result['accuracy'] = accuracy(train_true, train_predictions)
-            result['f1_nof1'], result['f1_nof2'] = f1s_binary(train_true, train_predictions)
-            # print('[ Non official f1 (1): {} ]\n'.format(f1_nof1))
-            # print('[ Non official f1 (2): {} ]\n'.format(f1_nof2))
-            # print('[ Epoch {0} end; Time: {1} ]\n'.format(e+1, time.time() - start))
-            print('\n{}'.format(result))
+            if e % 5:
+                if not param['crf']:
+                    conllf1 = precision_recall_f1(m_true, m_pred)
 
-            conllf1 = precision_recall_f1(m_true, m_pred)
-
-            print('[ Validation on {}: ... ]'.format(join(flags['data_dir'], 'russian_dev.txt')))
-            dev_predictions = []
-            dev_true = []
-            for data, i in gen_dev:
-                pred_labels = model.inference_op(data, sess)
-                dev_predictions.extend(pred_labels)
-                y_dev = refactor_data(data, tag_vocabulary, [param['batch_size'], param['maximum_L']])
-                dev_true.extend(y_dev)
-
-            acc = accuracy(dev_true, dev_predictions)
-            print('[accuracy = {}]\n'.format(acc))
-
-            f1_nof1, f1_nof2 = f1s_binary(dev_true, dev_predictions)
-            print('[ Non official f1 (1): {} ]\n'.format(f1_nof1))
-            print('[ Non official f1 (2): {} ]\n'.format(f1_nof2))
+                # print('[ Validation on {}: ... ]'.format(join(flags['data_dir'], 'russian_dev.txt')))
+                # dev_predictions = []
+                # dev_true = []
+                # for data, i in gen_dev:
+                #     pred_labels = model.inference_op(data, sess)
+                #     dev_predictions.extend(pred_labels)
+                #     y_dev = refactor_data(data, tag_vocabulary, [param['batch_size'], param['maximum_L']])
+                #     dev_true.extend(y_dev)
+                #
+                # acc = accuracy(dev_true, dev_predictions)
+                # print('[accuracy = {}]\n'.format(acc))
+                #
+                # f1_nof1, f1_nof2 = f1s_binary(dev_true, dev_predictions)
+                # print('[ Non official f1 (1): {} ]\n'.format(f1_nof1))
+                # print('[ Non official f1 (2): {} ]\n'.format(f1_nof2))
 
             if e % flags['checkpoint_freq'] == 0:
                 if not os.path.isdir(flags['checkpoint_dir']):
@@ -194,156 +186,7 @@ def train(generator, param, flags):
 
     tf.reset_default_graph()
 
-    print('Start testing model from checkpoint: {} '.format(flags['checkpoint_dir']))
-
-    with tf.Session() as sess:
-        # create model
-        model = NEF(param, tag_vocabulary, i2t)
-
-        # print config
-        print(model.path)
-
-        model.load(sess, flags['checkpoint_dir'])
-        print('[ model was restored ... ]\n'.format(flags['checkpoint_dir']))
-        sess.run(tf.global_variables_initializer())
-
-        # start testing
-        gen_test = generator(test_data, param['batch_size'])
-        test_predictions = []
-        test_true = []
-        for data in gen_test:
-            pred_labels = model.inference_op(data, sess)
-            test_predictions.extend(pred_labels)
-
-            y_test = refactor_data(data, tag_vocabulary, [param['batch_size'], param['maximum_L']])
-            test_true.extend(y_test)
-
-        acc = accuracy(test_true, test_predictions)
-        print('[accuracy = {}]\n'.format(acc))
-
-        f1_nof1, f1_nof2 = f1s_binary(test_true, test_predictions)
-        print('[ Non official f1 (1): {} ]'.format(f1_nof1))
-        print('[ Non official f1 (2): {} ]'.format(f1_nof2))
-
-    print('[ End of Testing. ]')
-    tf.reset_default_graph()
-
     return None
-
-
-# def test(generator, param, checkpoint):
-#
-#     print('Start testing model from checkpoint: {} '.format(checkpoint))
-#
-#     with tf.Session() as sess:
-#         # create model
-#         model = NEF(param, tag_vocabulary)
-#
-#         # print config
-#         print(model.path)
-#
-#         model.load(sess, checkpoint)
-#         print('[ model was restored ... ]\n'.format(checkpoint))
-#         sess.run(tf.global_variables_initializer())
-#
-#         # start testing
-#         gen = generator(test_data, param['batch_size'])
-#         test_predictions = []
-#         test_true = []
-#         for data in gen:
-#             pred_labels = model.inference_op(data, sess)
-#             test_predictions.extend(pred_labels)
-#
-#             y = refactor_data(data, tag_vocabulary, [param['batch_size'], param['maximum_L']])
-#             test_true.extend(y)
-#
-#         acc = accuracy(test_true, test_predictions)
-#         print('[accuracy = {}]\n'.format(acc))
-#
-#         f1_nof1, f1_nof2 = f1s_binary(test_true, test_predictions)
-#         print('[ Non official f1 (1): {} ]'.format(f1_nof1))
-#         print('[ Non official f1 (2): {} ]'.format(f1_nof2))
-#
-#     print('[ End of Testing. ]')
-#     tf.reset_default_graph()
-#
-#     return None
-#
-#
-# def doc_inference(adres, generator, param, flags, checkpoint):
-#     # TODO: move from there
-#     scorer = 'conlleval.txt'
-#
-#     data = read_dataset(adres, param['maximum_L'], split=False)
-#
-#     words, tag_vocabulary, word_counter = create_vocabulary(data)
-#
-#     with tf.Session() as sess:
-#         # create model
-#         model = NEF(param, tag_vocabulary)
-#
-#         # print config
-#         print(model.path)
-#
-#         model.load(sess, checkpoint)
-#         print('[ model was restored ... ]\n'.format(checkpoint))
-#         sess.run(tf.global_variables_initializer())
-#
-#         # start testing
-#         gen = generator(data, param['batch_size'])
-#         test_predictions = []
-#         for data_ in gen:
-#             pred_labels = model.inference_op(data_, sess)
-#             test_predictions.extend(pred_labels)
-#
-#     tf.reset_default_graph()
-#
-#     print(len(test_predictions[0]))
-#
-#     # write in file
-#     lines = list()
-#     sent = list()
-#     k_max = 0
-#     k = 0
-#     with open(adres, 'r') as in_f:
-#         for line in in_f:
-#             if line != '\n':
-#                 sent.append(line[:-1])
-#                 k += 1
-#             else:
-#                 lines.append(sent)
-#                 sent = []
-#                 if k > k_max:
-#                     k_max = k
-#                 k = 0
-#         in_f.close()
-#
-#     print(k_max)
-#
-#     name = adres.split('/')[-1]
-#     names = name.split('.')
-#     name = names[0] + '_pred.' + names[-1]
-#
-#     with open(join(flags['prediction_path'], name), 'w') as f:
-#         for i, sent in enumerate(lines):
-#             for j, t in enumerate(sent):
-#                 t = t + ' ' + tag_vocabulary[test_predictions[i][j]] + '\n'
-#                 f.write(t)
-#             f.write('\n')
-#         f.close()
-#
-#     cmd = 'perl {0} < {1}'.format(scorer, join(flags['prediction_path'], name))
-#     os.system(cmd)
-#
-#     print('END of converting.')
-#
-#     return None
-
-
-# def inference(adres, param, flags, checkpoint):
-#     data = read_dataset(adres, param['maximum_L'], split=False)
-#
-#     words, tag_vocabulary, word_counter = create_vocabulary(data)
 
 
 def main(_):

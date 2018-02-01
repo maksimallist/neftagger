@@ -1,11 +1,11 @@
-import numpy as np
-import os
-import tensorflow as tf
-from neftagger import NEF
 from os.path import join
-from utils import read_dataset, create_vocabulary
-from utils import accuracy, f1s_binary, precision_recall_f1
 
+import numpy as np
+import tensorflow as tf
+
+from debug.neftagger import NEF
+from utils import accuracy, f1s_binary, precision_recall_f1
+from utils import read_dataset, create_vocabulary
 
 # net parameters
 parameters = dict()
