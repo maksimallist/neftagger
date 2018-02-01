@@ -48,10 +48,10 @@ parameters['batch_size'] = 100  # Batch size to use during training.
 parameters['activation'] = 'tanh'  # activation function for dense layers in net
 parameters['sketches_num'] = 10  # number of sketches
 parameters['preattention_layer'] = 100  # dimensionality of hidden layer
-parameters['sketch_dim'] = 2*256
+parameters['sketch_dim'] = 2*10
 
 parameters['unit_tipe'] = 'gru'
-parameters['number_of_units'] = (128, 256)  # number of RNN encoder units
+parameters['number_of_units'] = (10, 10)  # number of RNN encoder units
 parameters['rnn_layers'] = 2
 
 parameters['window'] = 2  # context size
@@ -75,8 +75,8 @@ train_flag['data_dir'] = './ner/data/{}/'.format(language)  # Data directory.
 train_flag['sketch_dir'] = './ner/sketches/{0}/{1}/'.format(language, name)  # Directory where sketch dumps
 #  are stored
 train_flag['checkpoint_dir'] = './ner/checkpoints/{0}/{1}/'.format(language, name)  # Model directory
-train_flag['epochs'] = 20  # training epochs
-train_flag['checkpoint_freq'] = 5  # save model every x epochs
+train_flag['epochs'] = 2  # training epochs
+train_flag['checkpoint_freq'] = 1  # save model every x epochs
 train_flag['restore'] = False  # restoring last session from checkpoint
 train_flag['interactive'] = False  # interactive mode
 train_flag['train'] = True  # training model
@@ -179,6 +179,7 @@ def train(generator, param, flags):
                         os.makedirs(flags['checkpoint_dir'])
 
                     model.save(sess, flags['checkpoint_dir'])
+                    print('[ model was saved ]')
 
         print('[ End. Global Time: {} ]\n'.format(time.time() - start_learning))
 
