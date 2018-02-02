@@ -43,6 +43,7 @@ def heritable_attention_block(hidden_states, state_size, window_size, sketch_dim
         :param r: context size
         :return:
         """
+        # TODO: make it for different shape of tensors
         # gather indices of padded
         time_major_matrix = tf.transpose(padded_matrix,
                                          [1, 2, 0])  # time-major  -> L x 2*state_size x batch_size

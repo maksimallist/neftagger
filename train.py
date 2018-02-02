@@ -52,7 +52,7 @@ parameters['preattention_layer'] = 100  # dimensionality of hidden layer
 parameters['sketch_dim'] = 2*256
 
 parameters['unit_tipe'] = 'gru'
-parameters['number_of_units'] = (128, 256)  # number of RNN encoder units
+parameters['number_of_units'] = (128, 256)  # number of RNN encoder units (128, 256)
 parameters['rnn_layers'] = 2
 
 parameters['window'] = 2  # context size
@@ -76,10 +76,10 @@ train_flag['data_dir'] = './ner/data/{}/'.format(language)  # Data directory.
 train_flag['sketch_dir'] = './ner/sketches/{0}/{1}/'.format(language, name)  # Directory where sketch dumps
 #  are stored
 train_flag['checkpoint_dir'] = './ner/checkpoints/{0}/{1}/'.format(language, name)  # Model directory
-train_flag['epochs'] = 80  # training epochs
-train_flag['checkpoint_freq'] = 5  # save model every x epochs
-train_flag['restore'] = False  # restoring last session from checkpoint
-train_flag['interactive'] = False  # interactive mode
+train_flag['epochs'] = 80  # training epochs 80
+train_flag['checkpoint_freq'] = 5  # save model every x epochs 5
+# train_flag['restore'] = False  # restoring last session from checkpoint
+# train_flag['interactive'] = False  # interactive mode
 train_flag['train'] = True  # training model
 train_flag['prediction_path'] = './ner/predictions/{0}/{1}/'.format(language, name)
 
@@ -210,12 +210,12 @@ def test(generator, param, flags):
     with tf.Session() as sess:
         # create model
         model = NEF(param, tag_vocabulary)
-        # model.load(sess, flags['checkpoint_dir'])
+        model.load(sess, flags['checkpoint_dir'])
 
         # print config
         print('model was restore from: {}'.format(flags['checkpoint_dir']))
         print(model.config)
-        sess.run(tf.global_variables_initializer())
+        # sess.run(tf.global_variables_initializer())
 
         # start testing
         start_testing = time.time()

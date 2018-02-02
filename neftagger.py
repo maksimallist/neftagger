@@ -227,7 +227,7 @@ class NEF():
 
         if tf.gfile.Exists(path):
             print("[ Reading model parameters from {} ]".format(path))
-            self.saver.restore(sess, path)
+            self.saver.restore(sess, join(path, "model.max.ckpt"))
         else:
             raise ValueError('No checkpoint in path {}'.format(path))
 
