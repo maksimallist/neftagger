@@ -42,16 +42,17 @@ else:
     raise ValueError('Sorry, {} language is not implemented yet.'.format(language))
 
 
+parameters['language'] = language
 parameters['learning_rate'] = 0.001  # Learning rate.
 parameters['optimizer'] = "adam"  # Optimizer [sgd, adam, adagrad, adadelta, momentum]
 parameters['batch_size'] = 100  # Batch size to use during training.
 parameters['activation'] = 'tanh'  # activation function for dense layers in net
 parameters['sketches_num'] = 10  # number of sketches
 parameters['preattention_layer'] = 100  # dimensionality of hidden layer
-parameters['sketch_dim'] = 2*10
+parameters['sketch_dim'] = 2*256
 
 parameters['unit_tipe'] = 'gru'
-parameters['number_of_units'] = (10, 10)  # number of RNN encoder units
+parameters['number_of_units'] = (128, 256)  # number of RNN encoder units
 parameters['rnn_layers'] = 2
 
 parameters['window'] = 2  # context size
@@ -75,8 +76,8 @@ train_flag['data_dir'] = './ner/data/{}/'.format(language)  # Data directory.
 train_flag['sketch_dir'] = './ner/sketches/{0}/{1}/'.format(language, name)  # Directory where sketch dumps
 #  are stored
 train_flag['checkpoint_dir'] = './ner/checkpoints/{0}/{1}/'.format(language, name)  # Model directory
-train_flag['epochs'] = 2  # training epochs
-train_flag['checkpoint_freq'] = 1  # save model every x epochs
+train_flag['epochs'] = 80  # training epochs
+train_flag['checkpoint_freq'] = 5  # save model every x epochs
 train_flag['restore'] = False  # restoring last session from checkpoint
 train_flag['interactive'] = False  # interactive mode
 train_flag['train'] = True  # training model
@@ -164,21 +165,38 @@ def train(generator, param, flags):
                 else:
                     losses = model.train_op(data, sess)
 
-                if i % 20 == 0:
-                    print('[ Epoch {0}; Loss: {1} ]'.format(e, losses))
+                print('[ Epoch {0}; Loss: {1} ]'.format(e, losses))
 
-            if e % 5 == 0:
+            if e % flags['checkpoint_freq'] == 0:
                 if not param['crf']:
                     conllf1 = precision_recall_f1(m_true, m_pred)
 
-                if conllf1['__total__']['f1'] > max_f1:
-                    max_f1 = conllf1['__total__']['f1']
+                    if conllf1['__total__']['f1'] > max_f1:
+                        max_f1 = conllf1['__total__']['f1']
 
-                    if not os.path.isdir(flags['checkpoint_dir']):
-                        os.makedirs(flags['checkpoint_dir'])
+                        if not os.path.isdir(flags['checkpoint_dir']):
+                            os.makedirs(flags['checkpoint_dir'])
 
-                    model.save(sess, flags['checkpoint_dir'])
-                    print('[ model was saved ]')
+                        model.save(sess, flags['checkpoint_dir'])
+                        print('[ model was saved ]')
+
+                        # validation on dev dataset
+                        print('[ Validation on dev dataset ... ]')
+                        dev_gen = generator(dev_data, param['batch_size'], 0)
+                        dev_pred = []
+                        dev_true = []
+
+                        for data, i in dev_gen:
+                            if not param['crf']:
+                                pred_labels = model.inference_op(data, sess)
+                                mpr = convert(pred_labels, i2t)
+                                dev_pred.extend(mpr)
+
+                                y = refactor_data(data, tag_vocabulary, [param['batch_size'], param['maximum_L']])
+                                mtr = convert(y, i2t)
+                                dev_true.extend(mtr)
+
+                        dev_conllf1 = precision_recall_f1(dev_true, dev_pred)
 
         print('[ End. Global Time: {} ]\n'.format(time.time() - start_learning))
 

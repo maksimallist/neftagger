@@ -3,6 +3,7 @@ import tensorflow as tf
 from tensorflow.contrib.layers import xavier_initializer
 import numpy as np
 import utils
+from os.path import join
 
 
 class NEF():
@@ -72,21 +73,22 @@ class NEF():
 
         # configuration
         self.config = 'Config:\nTask: NER\nNet configuration:\n\tRNN: Bidirectional RNN;\n\tType of cell: {0};' \
-                      'Number layers: {1};\n\tNumber units: {2};\n\t' \
+                      '\n\tNumber layers: {1};\n\tNumber units: {2};\n\t' \
                       'Attention layer dim: {3};\n\tSketch dim: {4};\n\tActivation Function: {5}\n' \
                       'Other parameters:\n\t' \
-                      'Number of lables: {6};\n\tLanguage: Russian;\n\tEmbeddings dimension: {7};\n\t' \
-                      'Number of Sketches: {8};\n\tWindow: {9}\n\tUse CRF: {10};\n\tFull Model: {11};\n\t' \
-                      'Batch size: {12}\n\tLearning rate: {13}\n\t' \
-                      'Optimizer: {14};\n\tDropout probability: {15};\n\tSketch dropout probability {16};\n\t' \
-                      'Attention tempreture: {17};\n\t' \
-                      'Attention discount factor; {18}\n'.format(self.unit_type,
+                      'Number of lables: {6};\n\tLanguage: {7};\n\tEmbeddings dimension: {8};\n\t' \
+                      'Number of Sketches: {9};\n\tWindow: {10}\n\tUse CRF: {11};\n\tFull Model: {12};\n\t' \
+                      'Batch size: {13}\n\tLearning rate: {14}\n\t' \
+                      'Optimizer: {15};\n\tDropout probability: {16};\n\tSketch dropout probability {17};\n\t' \
+                      'Attention tempreture: {18};\n\t' \
+                      'Attention discount factor; {19}\n'.format(self.unit_type,
                                                                  self.rnn_layers,
                                                                  self.units,
                                                                  self.preatt_hid_dim,
                                                                  self.sketch_dim,
                                                                  self.activation_func,
                                                                  self.tag_num,
+                                                                 params['language'],
                                                                  self.embeddings_dim,
                                                                  self.sketches_num,
                                                                  self.window_size,
@@ -94,7 +96,7 @@ class NEF():
                                                                  self.full_model,
                                                                  self.batch_size,
                                                                  self.learning_rate,
-                                                                 self.optimizer,
+                                                                 self.optimizer_,
                                                                  self.drop,
                                                                  self.drop_sketch,
                                                                  self.attention_temperature,
@@ -229,5 +231,5 @@ class NEF():
         else:
             raise ValueError('No checkpoint in path {}'.format(path))
 
-    def save(self, sess, path, graph=False):
-        self.saver.save(sess, path, write_meta_graph=graph)
+    def save(self, sess, path):
+        self.saver.save(sess, join(path, 'model.max.ckpt'))
