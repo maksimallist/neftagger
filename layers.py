@@ -30,7 +30,7 @@ def stacked_rnn(input_units,
 
 # Heritable attention block
 def heritable_attention_block(hidden_states, state_size, window_size, sketch_dim, dim_hlayer, batch_size,
-                              activation, L, sketches_num, discount_factor, temperature, full_model):
+                              activation, L, sketches_num, discount_factor, temperature, full_model, drop_):
 
     # attention parameter
     v = tf.get_variable(name="v", shape=[dim_hlayer, 1],
@@ -43,6 +43,7 @@ def heritable_attention_block(hidden_states, state_size, window_size, sketch_dim
         :param r: context size
         :return:
         """
+
         # TODO: make it for different shape of tensors
         # gather indices of padded
         time_major_matrix = tf.transpose(padded_matrix,
@@ -121,9 +122,17 @@ def heritable_attention_block(hidden_states, state_size, window_size, sketch_dim
             return att
 
         before_att = tf.layers.dense(tensor, dim_hlayer, activation=activation)  # [batch_size; L; dim_hlayer]
+
+        # dropout for preattention tensor
+        before_att = tf.nn.dropout(before_att, drop_)
+
         before_att = tf.transpose(before_att, [1, 0, 2])  # [L; batch_size; dim_hlayer]
 
         attentions = tf.map_fn(attention, before_att, dtype=tf.float32)  # [L, batch_size, 1]
+
+        # dropout for preattention tensor
+        attentions = tf.nn.dropout(attentions, drop_)
+
         attentions = tf.reshape(attentions, [batch_size, L]) - cum_attention*discount_factor  # [batch_size, L]
 
         U = tf.ones_like(cum_attention) - cum_attention

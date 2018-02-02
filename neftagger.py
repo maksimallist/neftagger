@@ -118,6 +118,9 @@ class NEF():
         rnn_out = layers.stacked_rnn(emb_drop, self.units, cell_type=self.unit_type)
         state_size = 2 * self.units[-1]  # concat of fw and bw lstm output
 
+        # dropout for rnn output tensor
+        rnn_out = tf.nn.dropout(rnn_out, self.drop)
+
         # Attention block
         self.sketch, self.cum_att_last = layers.heritable_attention_block(rnn_out,
                                                                           state_size,
@@ -131,6 +134,7 @@ class NEF():
                                                                           self.attention_discount_factor,
                                                                           self.attention_temperature,
                                                                           self.full_model)
+        self.sketch = tf.nn.dropout(self.sketch, self.drop_sketch)
 
         hs_final = tf.concat([rnn_out, self.sketch], axis=2)  # [batch_size, L, 2*state_size]
 
