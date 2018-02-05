@@ -281,3 +281,4 @@ class NEF:
 
     def save(self, sess, path):
         self.saver.save(sess, join(path, 'model.max.ckpt'))
+
