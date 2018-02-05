@@ -34,6 +34,7 @@ class NEF():
         self.regularization = params['regularization']
         self.l2_scale = params['l2_scale']
         self.l1_scale = params['l1_scale']
+        self.betha = params['reg_betha']
         self.window_size = params['window']
         self.batch_size = params['batch_size']
         self.max_l = params['maximum_L']
@@ -49,6 +50,7 @@ class NEF():
 
         # training params
         self.learning_rate = params['learning_rate']
+        self.decay_rate = params['decay_rate']
         self.global_step = tf.Variable(0, trainable=False)
         self.optimizer_ = params['optimizer']
         optimizer_map = {"sgd": tf.train.GradientDescentOptimizer,
@@ -71,6 +73,7 @@ class NEF():
         # loading embeddings and vocabulary
         self.word_emb = utils.load_embeddings(self.embeddings, self.embeddings_dim, self.emb_format)
         self.tag_emb = t2i
+        self.n_training_samples = params['n_training_samples']
 
         # configuration
         self.config = 'Config:\nTask: NER\nNet configuration:\n\tRNN: Bidirectional RNN;\n\tType of cell: {0};' \
@@ -167,25 +170,43 @@ class NEF():
             weights_list = [hs_final, logits]  # M_src, M_tgt word embeddings not included
             l2_loss = tf.contrib.layers.apply_regularization(
                 tf.contrib.layers.l2_regularizer(self.l2_scale), weights_list=weights_list)
-            self.loss += l2_loss
+            self.loss = tf.reduce_mean(self.loss + self.betha * l2_loss)
         if self.regularization == 'l1':
             weights_list = [hs_final, logits]
             l1_loss = tf.contrib.layers.apply_regularization(
                 tf.contrib.layers.l1_regularizer(self.l1_scale), weights_list=weights_list)
-            self.loss += l1_loss
+            self.loss += tf.reduce_mean(self.loss + self.betha * l1_loss)
 
         # gradients and update operation for training the model
-        if self.mode == 'train':
-            train_params = tf.trainable_variables()
-            gradients = tf.gradients(self.loss, train_params)
+        # if self.mode == 'train':
+        #     train_params = tf.trainable_variables()
+        #     gradients = tf.gradients(self.loss, train_params)
+        #
+        #     if self.max_gradient_norm > -1:
+        #         clipped_gradients, norm = tf.clip_by_global_norm(gradients, self.max_gradient_norm)
+        #         self.update = self.optimizer.apply_gradients(zip(clipped_gradients, train_params))
+        #
+        #     else:
+        #         self.update = self.optimizer.apply_gradients(zip(gradients, train_params))
 
-            if self.max_gradient_norm > -1:
-                clipped_gradients, norm = tf.clip_by_global_norm(gradients, self.max_gradient_norm)
-                self.update = self.optimizer.apply_gradients(zip(clipped_gradients, train_params))
+        train_params = tf.trainable_variables()
+        global_step = tf.Variable(0, trainable=False)
+        decay_steps = tf.cast(self.n_training_samples / self.batch_size, tf.int32)
+        if self.decay_rate is not None:
+            learning_rate = tf.train.exponential_decay(self.learning_rate,
+                                                       global_step,
+                                                       decay_steps=decay_steps,
+                                                       decay_rate=self.decay_rate,
+                                                       staircase=True)
+            self.learning_rate = learning_rate
 
-            else:
-                self.update = self.optimizer.apply_gradients(zip(gradients, train_params))
+        # For batch norm it is necessary to update running averages
+        extra_update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+        with tf.control_dependencies(extra_update_ops):
+            self.update = tf.train.AdamOptimizer(self.learning_rate).minimize(self.loss, global_step=global_step,
+                                                                              var_list=train_params)
 
+        # Saver
         self.saver = tf.train.Saver(tf.global_variables())
 
     def tensorize_example(self, example, mode='train'):
