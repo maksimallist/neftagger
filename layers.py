@@ -44,8 +44,8 @@ def heritable_attention_block(hidden_states, state_size, window_size, sketch_dim
         :return:
         """
 
-        # TODO: make it for different shape of tensors
         # gather indices of padded
+        size = tf.shape(padded_matrix)
         time_major_matrix = tf.transpose(padded_matrix,
                                          [1, 2, 0])  # time-major  -> L x 2*state_size x batch_size
         contexts = []
@@ -54,18 +54,24 @@ def heritable_attention_block(hidden_states, state_size, window_size, sketch_dim
             context_j = time_major_matrix[j - r:j + r + 1, :, :]  # 2*r+1 x 2*state_size x batch_size
             # concatenate
             context_j = tf.reshape(context_j,
-                                   [(2 * r + 1) * 2 * state_size, batch_size])  # (2*r+1)*(state_size) x batch_size
+                                   [(2 * r + 1) * size[-1], batch_size])  # (2*r+1)*(state_size) x batch_size
             contexts.append(context_j)
         contexts = tf.stack(contexts)  # L x (2*r+1)* 2*(state_size) x batch_size
+
         batch_major_contexts = tf.transpose(contexts, [2, 0, 1])
         # switch back: batch_size x L x (2*r+1)*2(state_size) (batch-major)
         return batch_major_contexts
 
     def prepare_tensor(hidstates, sk, padding_col):
-        hs = tf.concat([hidstates, sk], 2)
         # add column on right and left, and add context window
-        hs = tf.pad(hs, padding_col, "CONSTANT", name="HS_padded")
-        hs = conv_r(hs, window_size)  # [batch_size, L, 2*state*(2*window_size + 1)]
+        hidstates = tf.pad(hidstates, padding_col, "CONSTANT", name="HS_padded")
+        sk = tf.pad(sk, padding_col, "CONSTANT", name="HS_padded")
+
+        hidstates = conv_r(hidstates, window_size)  # [batch_size, L, state*(2*window_size + 1)]
+        sk = conv_r(sk, window_size)  # [batch_size, L, sketch_dim*(2*window_size + 1)]
+
+        hs = tf.concat([hidstates, sk], 2)  # [batch_size, L, (state + sketch_dim)*(2*window_size + 1)]
+
         return hs
 
     def sketch_step(tensor, cum_attention, active_mask, temper):

@@ -44,14 +44,14 @@ else:
 
 parameters['language'] = language
 parameters['learning_rate'] = 0.001  # Learning rate.
-parameters['decay_rate'] = 0.
+parameters['decay_rate'] = 0.9999
 parameters['optimizer'] = "adam"  # Optimizer [sgd, adam, adagrad, adadelta, momentum]
 parameters['batch_size'] = 100  # Batch size to use during training.
 parameters['activation'] = 'tanh'  # activation function for dense layers in net
 parameters['last_activation'] = 'tanh'
 parameters['sketches_num'] = 10  # number of sketches
-parameters['preattention_layer'] = 100  # dimensionality of hidden layer
-parameters['sketch_dim'] = 2*128
+parameters['preattention_layer'] = 128  # dimensionality of hidden layer
+parameters['sketch_dim'] = 128  # 2*128
 
 parameters['unit_tipe'] = 'gru'
 parameters['number_of_units'] = (64, 128)  # number of RNN encoder units (128, 256)
@@ -59,9 +59,9 @@ parameters['rnn_layers'] = 2
 
 parameters['window'] = 2  # context size
 parameters['attention_discount_factor'] = 0.1  # Attention discount factor
-parameters['attention_temperature'] = 1.0  # Attention temperature
+parameters['attention_temperature'] = 0.7  # Attention temperature
 parameters['drop_prob'] = 0.3  # keep probability for dropout during training (1: no dropout)
-parameters['drop_prob_sketch'] = 1  # keep probability for dropout during sketching (1: no dropout)
+parameters['drop_prob_sketch'] = 0.3  # keep probability for dropout during sketching (1: no dropout)
 parameters['regularization'] = 'l2'  # regularization
 parameters["l2_scale"] = 0.5  # "L2 regularization constant"
 parameters["l1_scale"] = 0.5  # "L1 regularization constant"
