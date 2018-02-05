@@ -60,6 +60,7 @@ parameters['attention_discount_factor'] = 0.1  # Attention discount factor
 parameters['attention_temperature'] = 1.0  # Attention temperature
 parameters['drop_prob'] = 0.3  # keep probability for dropout during training (1: no dropout)
 parameters['drop_prob_sketch'] = 1  # keep probability for dropout during sketching (1: no dropout)
+parameters['regularization'] = 'l2'  # regularization
 parameters["l2_scale"] = 0  # "L2 regularization constant"
 parameters["l1_scale"] = 0  # "L1 regularization constant"
 parameters["max_gradient_norm"] = -1  # "maximum gradient norm for clipping (-1: no clipping)"

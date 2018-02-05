@@ -129,10 +129,6 @@ def heritable_attention_block(hidden_states, state_size, window_size, sketch_dim
         before_att = tf.transpose(before_att, [1, 0, 2])  # [L; batch_size; dim_hlayer]
 
         attentions = tf.map_fn(attention, before_att, dtype=tf.float32)  # [L, batch_size, 1]
-
-        # dropout for preattention tensor
-        attentions = tf.nn.dropout(attentions, drop_)
-
         attentions = tf.reshape(attentions, [batch_size, L]) - cum_attention*discount_factor  # [batch_size, L]
 
         U = tf.ones_like(cum_attention) - cum_attention
@@ -144,11 +140,15 @@ def heritable_attention_block(hidden_states, state_size, window_size, sketch_dim
             cn = tf.reshape(cn, [batch_size, 2*state_size*(2*window_size + 1)])  # [batch_size,
             #  2*state_size*(2*window_size + 1)]
             s = tf.layers.dense(cn, sketch_dim, activation=activation)  # [batch_size, sketch_dim]
+            # dropout for post_attention tensor
+            s = tf.nn.dropout(s, drop_)
 
             s = tf.matmul(tf.expand_dims(constrained_weights, [2]), tf.expand_dims(s, [1]))  # [batch_size, L,
             #  sketch_dim]
         else:
             s = tf.layers.dense(tensor, sketch_dim, activation=activation)  # [batch_size; L; sketch_dim]
+            # dropout for post_attention tensor
+            s = tf.nn.dropout(s, drop_)
             s = tf.expand_dims(constrained_weights, [2]) * s  # [batch_size; L; sketch_dim]
 
         return s, constrained_weights, new_mask

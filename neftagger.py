@@ -31,6 +31,7 @@ class NEF():
         self.drop_sketch = params['drop_prob_sketch']
         self.attention_temperature = params['attention_temperature']
         self.attention_discount_factor = params['attention_discount_factor']
+        self.regularization = params['regularization']
         self.l2_scale = params['l2_scale']
         self.l1_scale = params['l1_scale']
         self.window_size = params['window']
@@ -133,8 +134,8 @@ class NEF():
                                                                           self.sketches_num,
                                                                           self.attention_discount_factor,
                                                                           self.attention_temperature,
-                                                                          self.full_model)
-        self.sketch = tf.nn.dropout(self.sketch, self.drop_sketch)
+                                                                          self.full_model,
+                                                                          self.drop_sketch)
 
         hs_final = tf.concat([rnn_out, self.sketch], axis=2)  # [batch_size, L, 2*state_size]
 
@@ -142,6 +143,7 @@ class NEF():
         with tf.variable_scope('Classifier'):
             # TODO: maybe need make relu activation or something else
             # TODO: maybe need to parametrize it
+
             logits = tf.layers.dense(hs_final, self.tag_num, kernel_initializer=xavier_initializer(),
                                      activation=self.activation)
 
@@ -159,6 +161,18 @@ class NEF():
             self.predictions = tf.argmax(logits, axis=-1)
 
         self.loss = tf.reduce_mean(loss_tensor)
+
+        # regularization
+        if self.regularization == 'l2':
+            weights_list = [hs_final, logits]  # M_src, M_tgt word embeddings not included
+            l2_loss = tf.contrib.layers.apply_regularization(
+                tf.contrib.layers.l2_regularizer(self.l2_scale), weights_list=weights_list)
+            self.loss += l2_loss
+        if self.regularization == 'l1':
+            weights_list = [hs_final, logits]
+            l1_loss = tf.contrib.layers.apply_regularization(
+                tf.contrib.layers.l1_regularizer(self.l1_scale), weights_list=weights_list)
+            self.loss += l1_loss
 
         # gradients and update operation for training the model
         if self.mode == 'train':
