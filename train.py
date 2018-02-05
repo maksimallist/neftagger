@@ -170,7 +170,7 @@ def train(generator, param, flags):
                 else:
                     losses = model.train_op(data, sess)
 
-                print('[ Epoch {0}; Loss: {1} ]'.format(e, losses))
+                print('[ Epoch {0}; Loss: {1:0.3f} ]'.format(e, losses))
 
             if e % flags['checkpoint_freq'] == 0:
                 if not param['crf']:

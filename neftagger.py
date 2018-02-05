@@ -6,6 +6,10 @@ import utils
 from os.path import join
 
 
+SEED = 42
+tf.set_random_seed(SEED)
+
+
 class NEF():
     def __init__(self, params, t2i):  # i2t
 
