@@ -101,8 +101,8 @@ def heritable_attention_block(hidden_states, state_size, window_size, sketch_dim
             # calculate new distribution with attention on distribution 'b'
             Q = tf.exp(ten/temp)
 
-            # TODO: it is really need ? we wanted some corelation with Q
-            # u = u/temp
+            # TODO: it is really need ? we wanted some correlation with Q
+            u = u/temp
 
             Z = tf.reduce_sum(Q*mask, axis=1, keep_dims=True)/(tf.ones(shape=[shape_t[0], 1]) -
                                                                tf.reduce_sum(neg_mask*u, axis=1, keep_dims=True))
