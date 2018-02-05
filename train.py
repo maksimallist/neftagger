@@ -48,6 +48,7 @@ parameters['decay_rate'] = 0.
 parameters['optimizer'] = "adam"  # Optimizer [sgd, adam, adagrad, adadelta, momentum]
 parameters['batch_size'] = 100  # Batch size to use during training.
 parameters['activation'] = 'tanh'  # activation function for dense layers in net
+parameters['last_activation'] = 'tanh'
 parameters['sketches_num'] = 10  # number of sketches
 parameters['preattention_layer'] = 100  # dimensionality of hidden layer
 parameters['sketch_dim'] = 2*128

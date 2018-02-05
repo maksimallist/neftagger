@@ -10,7 +10,7 @@ SEED = 42
 tf.set_random_seed(SEED)
 
 
-class NEF():
+class NEF:
     def __init__(self, params, t2i):  # i2t
 
         # model structure
@@ -51,6 +51,8 @@ class NEF():
             self.activation = tf.nn.sigmoid
         else:
             raise NotImplementedError('Not implemented {} activation function'.format(self.activation_func))
+
+        self.last_activation = params['last_activation']
 
         # training params
         self.learning_rate = params['learning_rate']
@@ -148,11 +150,15 @@ class NEF():
 
         # Classifier
         with tf.variable_scope('Classifier'):
-            # TODO: maybe need make relu activation or something else
-            # TODO: maybe need to parametrize it
-
-            logits = tf.layers.dense(hs_final, self.tag_num, kernel_initializer=xavier_initializer(),
-                                     activation=self.activation)
+            if self.last_activation == 'relu':
+                logits = tf.layers.dense(hs_final, self.tag_num, kernel_initializer=xavier_initializer(),
+                                         activation=tf.nn.relu)
+            elif self.last_activation == 'sigm':
+                logits = tf.layers.dense(hs_final, self.tag_num, kernel_initializer=xavier_initializer(),
+                                         activation=tf.nn.sigmoid)
+            else:
+                logits = tf.layers.dense(hs_final, self.tag_num, kernel_initializer=xavier_initializer(),
+                                         activation=self.activation)
 
         if self.crf:
             sequence_lengths = tf.reduce_sum(self.mask, axis=1)
