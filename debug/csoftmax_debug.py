@@ -2,7 +2,64 @@ import tensorflow as tf
 import numpy as np
 
 
-def csoftmax(ten, u, temp):
+# def csoftmax(ten, u, temp):
+#     """
+#     Compute the constrained softmax (csoftmax);
+#     See paper "Learning What's Easy: Fully Differentiable Neural Easy-First Taggers"
+#     on https://andre-martins.github.io/docs/emnlp2017_final.pdf (page 4)
+#
+#     :param ten: input tensor
+#     :param u: cumulative attention see paper
+#     :param temp: softmax temperature
+#     :return: distribution
+#     """
+#
+#     shape_t = ten.shape
+#     shape_u = u.shape
+#     assert shape_u == shape_t
+#
+#     def loop(p, mask, found):
+#         neg_mask = tf.ones_like(mask) - mask
+#         z = tf.reduce_sum(p * mask, axis=1, keep_dims=True) / (tf.ones(shape=[shape_t[0], 1]) -
+#                                                                tf.reduce_sum(neg_mask * u, axis=1,
+#                                                                              keep_dims=True))
+#
+#         # war with NaN and inf
+#         z_mask = tf.cast(tf.less_equal(z, tf.zeros_like(z)), dtype=tf.float32)
+#         z = z + z_mask
+#
+#         alp = p / z
+#
+#         # verification of the condition and modification of masks
+#         t_mask = tf.to_float(tf.less_equal(alp, u))
+#         f_mask = tf.to_float(tf.less(u, alp))
+#
+#         alpha = alp * t_mask + u * f_mask
+#
+#         mask = mask * t_mask
+#
+#         if tf.reduce_sum(f_mask) == 0:
+#             found = True
+#
+#         return alpha, mask, found
+#
+#     # mean
+#     ten = ten - tf.reduce_mean(ten, axis=1, keep_dims=True)
+#     # mask
+#     mask_ = tf.ones_like(u)
+#     # calculate new distribution with attention on distribution 'b'
+#     q = tf.exp(ten / temp)
+#     found_ = False
+#
+#     # start while loop
+#     (q, mask_, found_) = tf.while_loop(cond=lambda _0, _1, f: f is False,
+#                                        body=loop,
+#                                        loop_vars=(q, mask_, found_))
+#
+#     return q
+
+
+def csoftmax(ten, u, temp=1.0):
     """
     Compute the constrained softmax (csoftmax);
     See paper "Learning What's Easy: Fully Differentiable Neural Easy-First Taggers"
@@ -18,17 +75,16 @@ def csoftmax(ten, u, temp):
     shape_u = u.shape
     assert shape_u == shape_t
 
-    def loop(p, mask, found):
+    def loop(p, mask, i, found):
         neg_mask = tf.ones_like(mask) - mask
-        z = tf.reduce_sum(p * mask, axis=1, keep_dims=True) / (tf.ones(shape=[shape_t[0], 1]) -
-                                                               tf.reduce_sum(neg_mask * u, axis=1,
-                                                                             keep_dims=True))
 
+        z = tf.reduce_sum(p * mask, axis=1, keep_dims=True) / (tf.ones(shape=[shape_t[0], 1]) -
+                                                               tf.reduce_sum(neg_mask * u, axis=1, keep_dims=True))
         # war with NaN and inf
         z_mask = tf.cast(tf.less_equal(z, tf.zeros_like(z)), dtype=tf.float32)
         z = z + z_mask
 
-        alp = p / z
+        alp = (p * mask)/z
 
         # verification of the condition and modification of masks
         t_mask = tf.to_float(tf.less_equal(alp, u))
@@ -41,22 +97,24 @@ def csoftmax(ten, u, temp):
         if tf.reduce_sum(f_mask) == 0:
             found = True
 
-        return alpha, mask, found
+        return alpha, mask, i+1, found
 
     # mean
     ten = ten - tf.reduce_mean(ten, axis=1, keep_dims=True)
     # mask
     mask_ = tf.ones_like(u)
+    # mask_ = tf.zeros_like(u)
     # calculate new distribution with attention on distribution 'b'
     q = tf.exp(ten / temp)
     found_ = False
 
     # start while loop
-    (q, mask_, found_) = tf.while_loop(cond=lambda _0, _1, f: f is False,
-                                       body=loop,
-                                       loop_vars=(q, mask_, found_))
+    k = 0
+    (r, _, l, _) = tf.while_loop(cond=lambda _0, _1, _2, f: f is False,
+                                 body=loop,
+                                 loop_vars=(q, mask_, k, found_))
 
-    return q
+    return r, l
 
 
 def my_csoftmax(ten, u, mask, temp):
@@ -139,34 +197,33 @@ with tf.Session() as sess:
 
     # t = sess.run(tens, feed_dict={input: input_tensor, b: cum_att})
 
-    p = 5
-
     am = np.ones((batch_size, L))
     ones = np.ones_like(cum_att)
 
-    print('iterations: \n{}'.format(p), '\n')
-    for i in range(p):
-        t = sess.run(tens, feed_dict={input: input_tensor, b: ones - cum_att, active_mask: am})
-        cum_att += t['csoftmax']
-        am = t['active_mask']
+    print('iterations: \n{}'.format(sketches_num), '\n')
+    for i in range(sketches_num):
+        print('input attention: \n{}\n'.format(cum_att), '\n')
+        # t = sess.run(tens, feed_dict={input: input_tensor, b: ones - cum_att, active_mask: am})
+        t, j = sess.run(tens, feed_dict={input: input_tensor, b: ones - cum_att})
+        cum_att += t
         print('Iteration: {}'.format(i+1))
-        # if np.mean(am) == 0:
-        #     break
+        print('Iteration in loop: {}'.format(j))
+        print('csoftmax: \n{}\n'.format(t), '\n')
+        print('csoftmax sum: \n{}\n'.format(np.sum(t, axis=1)), '\n')
+        # print('input tensor: \n{}\n'.format(t['input_tensor']), '\n')
 
-        print('input tensor: \n{}\n'.format(t['input_tensor']), '\n')
-        print('input attention: \n{}\n'.format(t['input_attention']), '\n')
-        print('input active mask: \n{}\n'.format(t['input_active_mask']), '\n')
-        print('input non active mask: \n{}\n'.format(t['input non active mask']), '\n')
-        print('input tensor after mean: \n{}\n'.format(t['tensor']), '\n')
+        # print('input active mask: \n{}\n'.format(t['input_active_mask']), '\n')
+        # print('input non active mask: \n{}\n'.format(t['input non active mask']), '\n')
+        # print('input tensor after mean: \n{}\n'.format(t['tensor']), '\n')
+        #
+        # print('Q: \n{}\n'.format(t['Q']), '\n')
+        # print('Z: \n{}\n'.format(t['Z']), '\n')
+        # print('A: \n{}\n'.format(t['A']), '\n')
+        # print('alpha: \n{}\n'.format(t['alpha']), '\n')
+        #
+        # print('true less mask: \n{}\n'.format(t['t_mask']), '\n')
+        # print('false less mask: \n{}\n'.format(t['f_mask']), '\n')
+        # print('new active mask: \n{}\n'.format(t['active_mask']), '\n')
 
-        print('Q: \n{}\n'.format(t['Q']), '\n')
-        print('Z: \n{}\n'.format(t['Z']), '\n')
-        print('A: \n{}\n'.format(t['A']), '\n')
-        print('alpha: \n{}\n'.format(t['alpha']), '\n')
-
-        print('true less mask: \n{}\n'.format(t['t_mask']), '\n')
-        print('false less mask: \n{}\n'.format(t['f_mask']), '\n')
-        print('new active mask: \n{}\n'.format(t['active_mask']), '\n')
-        print('csoftmax: \n{}\n'.format(t['csoftmax']), '\n')
 
 tf.reset_default_graph()
