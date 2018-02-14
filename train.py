@@ -47,12 +47,12 @@ parameters['learning_rate'] = 0.001  # Learning rate.
 parameters['optimizer'] = "adam"  # Optimizer [sgd, adam, adagrad, adadelta, momentum]
 parameters['batch_size'] = 100  # Batch size to use during training.
 parameters['activation'] = 'tanh'  # activation function for dense layers in net
-parameters['sketches_num'] = 10  # number of sketches
-parameters['preattention_layer'] = 100  # dimensionality of hidden layer
-parameters['sketch_dim'] = 2*256
+parameters['sketches_num'] = 5  # number of sketches
+parameters['preattention_layer'] = 50  # dimensionality of hidden layer
+parameters['sketch_dim'] = 2*64
 
 parameters['unit_tipe'] = 'gru'
-parameters['number_of_units'] = (128, 256)  # number of RNN encoder units (128, 256)
+parameters['number_of_units'] = (32, 64)  # number of RNN encoder units (128, 256)
 parameters['rnn_layers'] = 2
 
 parameters['window'] = 2  # context size
@@ -68,7 +68,7 @@ parameters['full_model'] = True
 parameters['crf'] = False
 
 # TODO: parametrization
-parameters['maximum_L'] = 124  # maximum length of sequences
+parameters['maximum_L'] = 202  # maximum length of sequences
 parameters['mode'] = 'train'
 
 train_flag = dict()

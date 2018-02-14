@@ -69,7 +69,54 @@ def heritable_attention_block(hidden_states, state_size, window_size, sketch_dim
 
     def sketch_step(tensor, cum_attention, active_mask, temper):
 
-        def csoftmax(ten, u, mask, temp):
+        # def csoftmax(ten, u, mask, temp):
+        #     """
+        #     Compute the constrained softmax (csoftmax);
+        #     See paper "Learning What's Easy: Fully Differentiable Neural Easy-First Taggers"
+        #     on https://andre-martins.github.io/docs/emnlp2017_final.pdf (page 4)
+        #
+        #     :param ten: input tensor
+        #     :param u: cumulative attention see paper
+        #     :param mask: mask with active elements
+        #     :param temp: softmax temperature
+        #     :return: distribution
+        #     """
+        #
+        #     shape_t = ten.shape
+        #     shape_u = u.shape
+        #     assert shape_u == shape_t
+        #
+        #     # mean
+        #     ten = ten - tf.reduce_mean(ten, axis=1, keep_dims=True)
+        #
+        #     neg_mask = tf.ones_like(mask) - mask
+        #
+        #     # calculate new distribution with attention on distribution 'b'
+        #     Q = tf.exp(ten/temp)
+        #
+        #     # TODO: it is really need ? we wanted some corelation with Q
+        #     # u = u/temp
+        #
+        #     Z = tf.reduce_sum(Q*mask, axis=1, keep_dims=True)/(tf.ones(shape=[shape_t[0], 1]) -
+        #                                                        tf.reduce_sum(neg_mask*u, axis=1, keep_dims=True))
+        #
+        #     # war with NaN and inf
+        #     z_mask = tf.cast(tf.less_equal(Z, tf.zeros_like(Z)), dtype=tf.float32)
+        #     Z = Z + z_mask
+        #
+        #     A = Q / Z
+        #
+        #     # verification of the condition and modification of masks
+        #     t_mask = tf.to_float(tf.less_equal(A, u))
+        #     f_mask = tf.to_float(tf.less(u, A))
+        #
+        #     alpha = A * t_mask + u * f_mask
+        #
+        #     mask = mask * t_mask
+        #
+        #     return alpha, mask
+
+        def csoftmax(ten, u, temp):
             """
             Compute the constrained softmax (csoftmax);
             See paper "Learning What's Easy: Fully Differentiable Neural Easy-First Taggers"
@@ -77,7 +124,6 @@ def heritable_attention_block(hidden_states, state_size, window_size, sketch_dim
 
             :param ten: input tensor
             :param u: cumulative attention see paper
-            :param mask: mask with active elements
             :param temp: softmax temperature
             :return: distribution
             """
@@ -86,35 +132,45 @@ def heritable_attention_block(hidden_states, state_size, window_size, sketch_dim
             shape_u = u.shape
             assert shape_u == shape_t
 
+            def loop(p, mask, found):
+                neg_mask = tf.ones_like(mask) - mask
+                z = tf.reduce_sum(p * mask, axis=1, keep_dims=True) / (tf.ones(shape=[shape_t[0], 1]) -
+                                                                       tf.reduce_sum(neg_mask * u, axis=1,
+                                                                                     keep_dims=True))
+
+                # war with NaN and inf
+                z_mask = tf.cast(tf.less_equal(z, tf.zeros_like(z)), dtype=tf.float32)
+                z = z + z_mask
+
+                alp = p / z
+
+                # verification of the condition and modification of masks
+                t_mask = tf.to_float(tf.less_equal(alp, u))
+                f_mask = tf.to_float(tf.less(u, alp))
+
+                alpha = alp * t_mask + u * f_mask
+
+                mask = mask * t_mask
+
+                if tf.reduce_sum(f_mask) == 0:
+                    found = True
+
+                return alpha, mask, found
+
             # mean
             ten = ten - tf.reduce_mean(ten, axis=1, keep_dims=True)
-
-            neg_mask = tf.ones_like(mask) - mask
-
+            # mask
+            mask_ = tf.ones_like(u)
             # calculate new distribution with attention on distribution 'b'
-            Q = tf.exp(ten/temp)
+            q = tf.exp(ten/temp)
+            found_ = False
 
-            # TODO: it is really need ? we wanted some corelation with Q
-            # u = u/temp
+            # start while loop
+            (q, mask_, found_) = tf.while_loop(cond=lambda _0, _1, f: f is False,
+                                               body=loop,
+                                               loop_vars=(q, mask_, found_))
 
-            Z = tf.reduce_sum(Q*mask, axis=1, keep_dims=True)/(tf.ones(shape=[shape_t[0], 1]) -
-                                                               tf.reduce_sum(neg_mask*u, axis=1, keep_dims=True))
-
-            # war with NaN and inf
-            z_mask = tf.cast(tf.less_equal(Z, tf.zeros_like(Z)), dtype=tf.float32)
-            Z = Z + z_mask
-
-            A = Q / Z
-
-            # verification of the condition and modification of masks
-            t_mask = tf.to_float(tf.less_equal(A, u))
-            f_mask = tf.to_float(tf.less(u, A))
-
-            alpha = A * t_mask + u * f_mask
-
-            mask = mask * t_mask
-
-            return alpha, mask
+            return q
 
         def attention(t):
             att = tf.matmul(t, v)  # [batch_size, 1]
@@ -126,8 +182,8 @@ def heritable_attention_block(hidden_states, state_size, window_size, sketch_dim
         attentions = tf.map_fn(attention, before_att, dtype=tf.float32)  # [L, batch_size, 1]
         attentions = tf.reshape(attentions, [batch_size, L]) - cum_attention*discount_factor  # [batch_size, L]
 
-        U = tf.ones_like(cum_attention) - cum_attention
-        constrained_weights, new_mask = csoftmax(attentions, U, active_mask, temper)  # [batch_size, L]
+        inv_cum_attention = tf.ones_like(cum_attention) - cum_attention
+        constrained_weights, new_mask = csoftmax(attentions, inv_cum_attention, temper)  # [batch_size, L]
 
         if not full_model:
             cn = tf.reduce_sum(tensor*tf.expand_dims(constrained_weights, [2]), axis=1)  # [batch_size,
