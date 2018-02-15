@@ -67,54 +67,74 @@ def heritable_attention_block(hidden_states, state_size, window_size, sketch_dim
         hs = conv_r(hs, window_size)  # [batch_size, L, 2*state*(2*window_size + 1)]
         return hs
 
-    def sketch_step(tensor, cum_attention, active_mask, temper):
+    def sketch_step(tensor, cum_attention, temper):
 
-        def csoftmax(ten, u, mask, temp):
-            """
-            Compute the constrained softmax (csoftmax);
-            See paper "Learning What's Easy: Fully Differentiable Neural Easy-First Taggers"
-            on https://andre-martins.github.io/docs/emnlp2017_final.pdf (page 4)
+        def csoftmax(tensor, cumulative_att, t):
 
-            :param ten: input tensor
-            :param u: cumulative attention see paper
-            :param mask: mask with active elements
-            :param temp: softmax temperature
-            :return: distribution
-            """
+            def csoftmax_for_slice(input):
+                """
+                Compute the constrained softmax (csoftmax);
+                See paper "Learning What's Easy: Fully Differentiable Neural Easy-First Taggers"
+                on https://andre-martins.github.io/docs/emnlp2017_final.pdf (page 4)
+                :param input: [input tensor, cumulative attention]
+                :return: distribution
+                """
 
-            shape_t = ten.shape
-            shape_u = u.shape
-            assert shape_u == shape_t
+                [ten, u] = input
 
-            # mean
-            ten = ten - tf.reduce_mean(ten, axis=1, keep_dims=True)
+                shape_t = ten.shape
+                shape_u = u.shape
+                assert shape_u == shape_t
 
-            neg_mask = tf.ones_like(mask) - mask
+                ten -= tf.reduce_mean(ten)
+                q = tf.exp(ten)
+                active = tf.ones_like(u, dtype=tf.int32)
+                mass = tf.constant(0, dtype=tf.float32)
+                found = tf.constant(True, dtype=tf.bool)
 
-            # calculate new distribution with attention on distribution 'b'
-            Q = tf.exp(ten/temp)
+                def loop(q_, mask, mass_, found_):
+                    q_list = tf.dynamic_partition(q_, mask, 2)
+                    condition_indices = tf.dynamic_partition(tf.range(tf.shape(q_)[0]), mask, 2)  # 0 element it False,
+                    #  1 element if true
 
-            # TODO: it is really need ? we wanted some corelation with Q
-            # u = u/temp
+                    p = q_list[1] * (1.0 - mass_) / tf.reduce_sum(q_list[1])
+                    p_new = tf.dynamic_stitch(condition_indices, [q_list[0], p])
 
-            Z = tf.reduce_sum(Q*mask, axis=1, keep_dims=True)/(tf.ones(shape=[shape_t[0], 1]) -
-                                                               tf.reduce_sum(neg_mask*u, axis=1, keep_dims=True))
+                    # verification of the condition and modification of masks
+                    less_mask = tf.cast(tf.less(u, p_new), tf.int32)  # 0 when u bigger than p, 1 when u less than p
+                    condition_indices = tf.dynamic_partition(tf.range(tf.shape(p_new)[0]), less_mask,
+                                                             2)  # 0 when u bigger
+                    #  than p, 1 when u less than p
 
-            # war with NaN and inf
-            z_mask = tf.cast(tf.less_equal(Z, tf.zeros_like(Z)), dtype=tf.float32)
-            Z = Z + z_mask
+                    split_p_new = tf.dynamic_partition(p_new, less_mask, 2)
+                    split_u = tf.dynamic_partition(u, less_mask, 2)
 
-            A = Q / Z
+                    alpha = tf.dynamic_stitch(condition_indices, [split_p_new[0], split_u[1]])
+                    mass_ += tf.reduce_sum(split_u[1])
 
-            # verification of the condition and modification of masks
-            t_mask = tf.to_float(tf.less_equal(A, u))
-            f_mask = tf.to_float(tf.less(u, A))
+                    mask = mask * (tf.ones_like(less_mask) - less_mask)
 
-            alpha = A * t_mask + u * f_mask
+                    found_ = tf.cond(tf.equal(tf.reduce_sum(less_mask), 0),
+                                     lambda: False,
+                                     lambda: True)
 
-            mask = mask * t_mask
+                    alpha = tf.reshape(alpha, q_.shape)
 
-            return alpha, mask
+                    return alpha, mask, mass_, found_
+
+                (csoft, mask_, _, _) = tf.while_loop(cond=lambda _0, _1, _2, f: f,
+                                                     body=loop,
+                                                     loop_vars=(q, active, mass, found))
+
+                return [csoft, mask_]
+
+            shape_ten = tensor.shape
+            shape_cum = cumulative_att.shape
+            assert shape_cum == shape_ten
+
+            t_in = [tensor, cumulative_att]
+            cs, _ = tf.map_fn(csoftmax_for_slice, t_in, dtype=[tf.float32, tf.float32])  # [bs, L]
+            return cs
 
         def attention(t):
             att = tf.matmul(t, v)  # [batch_size, 1]
@@ -127,7 +147,7 @@ def heritable_attention_block(hidden_states, state_size, window_size, sketch_dim
         attentions = tf.reshape(attentions, [batch_size, L]) - cum_attention*discount_factor  # [batch_size, L]
 
         U = tf.ones_like(cum_attention) - cum_attention
-        constrained_weights, new_mask = csoftmax(attentions, U, active_mask, temper)  # [batch_size, L]
+        constrained_weights = csoftmax(attentions, U, temper)  # [batch_size, L]
 
         if not full_model:
             cn = tf.reduce_sum(tensor*tf.expand_dims(constrained_weights, [2]), axis=1)  # [batch_size,
@@ -142,7 +162,7 @@ def heritable_attention_block(hidden_states, state_size, window_size, sketch_dim
             s = tf.layers.dense(tensor, sketch_dim, activation=activation)  # [batch_size; L; sketch_dim]
             s = tf.expand_dims(constrained_weights, [2]) * s  # [batch_size; L; sketch_dim]
 
-        return s, constrained_weights, new_mask
+        return s, constrained_weights
 
     sketch = tf.zeros(shape=[batch_size, L, sketch_dim], dtype=tf.float32)  # sketch tenzor
     cum_att = tf.zeros(shape=[batch_size, L])  # cumulative attention
@@ -150,15 +170,12 @@ def heritable_attention_block(hidden_states, state_size, window_size, sketch_dim
     padding_hs_col = tf.constant([[0, 0], [window_size, window_size], [0, 0]], name="padding_hs_col")
     temperature = tf.constant(temperature, dtype=tf.float32, name='attention_temperature')
 
-    a_mask = tf.ones([batch_size, L])
-
     for i in range(sketches_num):
 
-        sketch_, cum_att_, mask_i = sketch_step(prepare_tensor(hidden_states, sketch, padding_hs_col),
-                                                cum_att, a_mask, temperature)
+        sketch_, cum_att_ = sketch_step(prepare_tensor(hidden_states, sketch, padding_hs_col),
+                                        cum_att, temperature)
 
         sketch += sketch_
         cum_att += cum_att_
-        a_mask = mask_i
 
     return sketch, cum_att
