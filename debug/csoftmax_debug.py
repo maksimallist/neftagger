@@ -163,7 +163,7 @@ def csoftmax(tensor, cumulative_att, t):
         q = tf.exp(ten)
         active = tf.ones_like(u, dtype=tf.int32)
         mass = tf.constant(0, dtype=tf.float32)
-        found = tf.constant(False, dtype=tf.bool)
+        found = tf.constant(True, dtype=tf.bool)
 
         def loop(q_, mask, mass_, found_):
             q_list = tf.dynamic_partition(q_, mask, 2)
@@ -186,14 +186,15 @@ def csoftmax(tensor, cumulative_att, t):
 
             mask = mask * (tf.ones_like(less_mask) - less_mask)
 
-            if tf.reduce_sum(less_mask) == 0:
-                found_ = True
+            found_ = tf.cond(tf.equal(tf.reduce_sum(less_mask), 0),
+                             lambda: False,
+                             lambda: True)
 
             alpha = tf.reshape(alpha, q_.shape)
 
             return alpha, mask, mass_, found_
 
-        (csoft, mask_, _, _) = tf.while_loop(cond=lambda _0, _1, _2, f: f is False,
+        (csoft, mask_, _, _) = tf.while_loop(cond=lambda _0, _1, _2, f: f,
                                              body=loop,
                                              loop_vars=(q, active, mass, found))
 
@@ -205,7 +206,6 @@ def csoftmax(tensor, cumulative_att, t):
 
     t_in = [tensor, cumulative_att]
     cs, _ = tf.map_fn(csoftmax_for_slice, t_in, dtype=[tf.float32, tf.float32])  # [bs, L]
-    # cs = csoftmax_for_slice(t_in)
     return cs
 
 
@@ -248,7 +248,7 @@ with tf.Session() as sess:
     for i in range(sketches_num):
         print('input attention: \n{}\n'.format(cum_att), '\n')
         # t = sess.run(tens, feed_dict={input: input_tensor, b: ones - cum_att, active_mask: am})
-        t = sess.run(tens, feed_dict={input: am, b: ones - cum_att})
+        t = sess.run(tens, feed_dict={input: input_tensor, b: ones - cum_att})
         cum_att += t
         print('Iteration: {}'.format(i+1))
         # print('Iteration in loop: {}'.format(j))
