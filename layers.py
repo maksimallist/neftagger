@@ -28,6 +28,120 @@ def stacked_rnn(input_units,
     return units
 
 
+def one_step_csoftmax(ten, u, mask, temp):
+    """
+    Compute the constrained softmax (csoftmax);
+    See paper "Learning What's Easy: Fully Differentiable Neural Easy-First Taggers"
+    on https://andre-martins.github.io/docs/emnlp2017_final.pdf (page 4)
+    :param ten: input tensor
+    :param u: cumulative attention see paper
+    :param mask: mask with active elements
+    :param temp: softmax temperature
+    :return: distribution
+    """
+
+    shape_t = ten.shape
+    shape_u = u.shape
+    assert shape_u == shape_t
+
+    # mean
+    ten = ten - tf.reduce_mean(ten, axis=1, keep_dims=True)
+
+    neg_mask = tf.ones_like(mask) - mask
+
+    # calculate new distribution with attention on distribution 'b'
+    Q = tf.exp(ten / temp)
+
+    # TODO: it is really need ? we wanted some correlation with Q
+    u = u / temp
+
+    Z = tf.reduce_sum(Q * mask, axis=1, keep_dims=True) / (tf.ones(shape=[shape_t[0], 1]) -
+                                                           tf.reduce_sum(neg_mask * u, axis=1, keep_dims=True))
+
+    # war with NaN and inf
+    z_mask = tf.cast(tf.less_equal(Z, tf.zeros_like(Z)), dtype=tf.float32)
+    Z = Z + z_mask
+
+    A = Q / Z
+
+    # verification of the condition and modification of masks
+    t_mask = tf.to_float(tf.less_equal(A, u))
+    f_mask = tf.to_float(tf.less(u, A))
+
+    alpha = A * t_mask + u * f_mask
+
+    mask = mask * t_mask
+
+    return alpha, mask
+
+
+def default_csoftmax(tensor, cumulative_att, t):
+    def csoftmax_for_slice(input):
+        """
+        Compute the constrained softmax (csoftmax);
+        See paper "Learning What's Easy: Fully Differentiable Neural Easy-First Taggers"
+        on https://andre-martins.github.io/docs/emnlp2017_final.pdf (page 4)
+        :param input: [input tensor, cumulative attention]
+        :return: distribution
+        """
+
+        [ten, u] = input
+
+        shape_t = ten.shape
+        shape_u = u.shape
+        assert shape_u == shape_t
+
+        ten -= tf.reduce_mean(ten)
+        q = tf.exp(ten)
+        active = tf.ones_like(u, dtype=tf.int32)
+        mass = tf.constant(0, dtype=tf.float32)
+        found = tf.constant(True, dtype=tf.bool)
+
+        def loop(q_, mask, mass_, found_):
+            q_list = tf.dynamic_partition(q_, mask, 2)
+            condition_indices = tf.dynamic_partition(tf.range(tf.shape(q_)[0]), mask, 2)  # 0 element it False,
+            #  1 element if true
+
+            p = q_list[1] * (1.0 - mass_) / tf.reduce_sum(q_list[1])
+            p_new = tf.dynamic_stitch(condition_indices, [q_list[0], p])
+
+            # verification of the condition and modification of masks
+            less_mask = tf.cast(tf.less(u, p_new), tf.int32)  # 0 when u bigger than p, 1 when u less than p
+            condition_indices = tf.dynamic_partition(tf.range(tf.shape(p_new)[0]), less_mask,
+                                                     2)  # 0 when u bigger
+            #  than p, 1 when u less than p
+
+            split_p_new = tf.dynamic_partition(p_new, less_mask, 2)
+            split_u = tf.dynamic_partition(u, less_mask, 2)
+
+            alpha = tf.dynamic_stitch(condition_indices, [split_p_new[0], split_u[1]])
+            mass_ += tf.reduce_sum(split_u[1])
+
+            mask = mask * (tf.ones_like(less_mask) - less_mask)
+
+            found_ = tf.cond(tf.equal(tf.reduce_sum(less_mask), 0),
+                             lambda: False,
+                             lambda: True)
+
+            alpha = tf.reshape(alpha, q_.shape)
+
+            return alpha, mask, mass_, found_
+
+        (csoft, mask_, _, _) = tf.while_loop(cond=lambda _0, _1, _2, f: f,
+                                             body=loop,
+                                             loop_vars=(q, active, mass, found))
+
+        return [csoft, mask_]
+
+    shape_ten = tensor.shape
+    shape_cum = cumulative_att.shape
+    assert shape_cum == shape_ten
+
+    t_in = [tensor, cumulative_att]
+    cs, _ = tf.map_fn(csoftmax_for_slice, t_in, dtype=[tf.float32, tf.float32])  # [bs, L]
+    return cs
+
+
 # Heritable attention block
 def heritable_attention_block(hidden_states, state_size, window_size, sketch_dim, dim_hlayer, batch_size,
                               activation, L, sketches_num, discount_factor, temperature, full_model):
