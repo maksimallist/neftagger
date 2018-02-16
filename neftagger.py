@@ -119,18 +119,18 @@ class NEF():
         state_size = 2 * self.units[-1]  # concat of fw and bw lstm output
 
         # Attention block
-        self.sketch, self.cum_att_last = layers.heritable_attention_block(rnn_out,
-                                                                          state_size,
-                                                                          self.window_size,
-                                                                          self.sketch_dim,
-                                                                          self.preatt_hid_dim,
-                                                                          self.batch_size,
-                                                                          self.activation,
-                                                                          self.max_l,
-                                                                          self.sketches_num,
-                                                                          self.attention_discount_factor,
-                                                                          self.attention_temperature,
-                                                                          self.full_model)
+        self.sketch, self.cum_att_last = layers.misha_attention_block(rnn_out,
+                                                                      state_size,
+                                                                      self.window_size,
+                                                                      self.sketch_dim,
+                                                                      self.preatt_hid_dim,
+                                                                      self.batch_size,
+                                                                      self.activation,
+                                                                      self.max_l,
+                                                                      self.sketches_num,
+                                                                      self.attention_discount_factor,
+                                                                      self.attention_temperature,
+                                                                      self.full_model)
 
         hs_final = tf.concat([rnn_out, self.sketch], axis=2)  # [batch_size, L, 2*state_size]
 
