@@ -372,7 +372,6 @@ def misha_attention_block(hidden_states, state_size, window_size, sketch_dim, di
             cs, _ = tf.map_fn(csoftmax_for_slice, t_in, dtype=[tf.float32, tf.float32])  # [bs, L]
             return cs
 
-        ##############################################################################################
         def attention(t):
             z = tf.layers.dense(t, 1, use_bias=False)
             return z
@@ -382,7 +381,7 @@ def misha_attention_block(hidden_states, state_size, window_size, sketch_dim, di
 
         attentions = tf.map_fn(attention, before_att, dtype=tf.float32)  # [L, batch_size, 1]
         attentions = tf.reshape(attentions, [batch_size, L]) - cum_attention*discount_factor  # [batch_size, L]
-        ##############################################################################################
+
         U = tf.ones_like(cum_attention) - cum_attention
         constrained_weights = csoftmax(attentions, U, temper)  # [batch_size, L]
 
