@@ -103,10 +103,9 @@ class NEF():
                                                                  self.attention_discount_factor)
 
         # network graph
-        # TODO: make batch_size and max_l None
-        self.x = tf.placeholder(tf.float32, [self.batch_size, self.max_l, self.embeddings_dim])  # Input Text embeddings
-        self.y = tf.placeholder(tf.float32, [self.batch_size, self.max_l])  # Output Tags embeddings
-        self.mask = tf.placeholder(tf.float32, [self.batch_size, self.max_l])
+        self.x = tf.placeholder(tf.float32, [None, None, self.embeddings_dim])  # Input Text embeddings
+        self.y = tf.placeholder(tf.float32, [None, None])  # Output Tags embeddings
+        self.mask = tf.placeholder(tf.float32, [None, None])
 
         # Input block (A_Block)
         with tf.name_scope("embedding"):
