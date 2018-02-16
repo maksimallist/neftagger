@@ -143,7 +143,7 @@ def default_csoftmax(tensor, cumulative_att, t):
 
 
 # Heritable attention block
-def heritable_attention_block(hidden_states, state_size, window_size, sketch_dim, dim_hlayer, batch_size,
+def heritable_attention_block(hidden_states, window_size, sketch_dim, dim_hlayer, batch_size,
                               activation, L, sketches_num, discount_factor, temperature, full_model):
 
     # attention parameter
@@ -269,8 +269,7 @@ def heritable_attention_block(hidden_states, state_size, window_size, sketch_dim
         if not full_model:
             cn = tf.reduce_sum(tensor*tf.expand_dims(constrained_weights, [2]), axis=1)  # [batch_size,
             #  2*state_size*(2*window_size + 1), 1]
-            cn = tf.reshape(cn, [batch_size, 2*state_size*(2*window_size + 1)])  # [batch_size,
-            #  2*state_size*(2*window_size + 1)]
+            cn = tf.squeeze(cn)  # [batch_size, 2*state_size*(2*window_size + 1)]
             s = tf.layers.dense(cn, sketch_dim, activation=activation)  # [batch_size, sketch_dim]
 
             s = tf.matmul(tf.expand_dims(constrained_weights, [2]), tf.expand_dims(s, [1]))  # [batch_size, L,
@@ -299,7 +298,7 @@ def heritable_attention_block(hidden_states, state_size, window_size, sketch_dim
 
 
 # Heritable attention block
-def misha_attention_block(hidden_states, state_size, window_size, sketch_dim, dim_hlayer, batch_size,
+def misha_attention_block(hidden_states, window_size, sketch_dim, dim_hlayer, batch_size,
                           activation, L, sketches_num, discount_factor, temperature, full_model):
 
     def sketch_step(tensor, cum_attention, temper):
@@ -388,8 +387,7 @@ def misha_attention_block(hidden_states, state_size, window_size, sketch_dim, di
         if not full_model:
             cn = tf.reduce_sum(tensor*tf.expand_dims(constrained_weights, [2]), axis=1)  # [batch_size,
             #  2*state_size*(2*window_size + 1), 1]
-            cn = tf.reshape(cn, [batch_size, 2*state_size*(2*window_size + 1)])  # [batch_size,
-            #  2*state_size*(2*window_size + 1)]
+            cn = tf.squeeze(cn)  # [batch_size, 2*state_size*(2*window_size + 1)]
             s = tf.layers.dense(cn, sketch_dim, activation=activation)  # [batch_size, sketch_dim]
 
             s = tf.matmul(tf.expand_dims(constrained_weights, [2]), tf.expand_dims(s, [1]))  # [batch_size, L,

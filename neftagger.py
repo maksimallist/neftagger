@@ -118,8 +118,7 @@ class NEF():
         state_size = 2 * self.units[-1]  # concat of fw and bw lstm output
 
         # Attention block
-        self.sketch, self.cum_att_last = layers.misha_attention_block(rnn_out,
-                                                                      state_size,
+        self.sketch, self.cum_att_last = layers.heritable_attention_block(rnn_out,
                                                                       self.window_size,
                                                                       self.sketch_dim,
                                                                       self.preatt_hid_dim,
