@@ -47,9 +47,9 @@ parameters['learning_rate'] = 0.001  # Learning rate.
 parameters['optimizer'] = "adam"  # Optimizer [sgd, adam, adagrad, adadelta, momentum]
 parameters['batch_size'] = 100  # Batch size to use during training.
 parameters['activation'] = 'tanh'  # activation function for dense layers in net
-parameters['sketches_num'] = 10  # number of sketches
+parameters['sketches_num'] = 5  # number of sketches
 parameters['preattention_layer'] = 100  # dimensionality of hidden layer
-parameters['sketch_dim'] = 2*256
+parameters['sketch_dim'] = 100
 
 parameters['unit_tipe'] = 'gru'
 parameters['number_of_units'] = (128, 256)  # number of RNN encoder units (128, 256)
