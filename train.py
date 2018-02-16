@@ -78,7 +78,7 @@ train_flag['sketch_dir'] = './ner/sketches/{0}/{1}/'.format(language, name)  # D
 train_flag['checkpoint_dir'] = './ner/checkpoints/{0}/{1}/'.format(language, name)  # Model directory
 train_flag['epochs'] = 80  # training epochs 80
 train_flag['checkpoint_freq'] = 5  # save model every x epochs 5
-# train_flag['restore'] = False  # restoring last session from checkpoint
+train_flag['restore'] = False  # restoring last session from checkpoint
 # train_flag['interactive'] = False  # interactive mode
 train_flag['train'] = True  # training model
 train_flag['prediction_path'] = './ner/predictions/{0}/{1}/'.format(language, name)
@@ -136,9 +136,16 @@ def train(generator, param, flags):
         # create model
         model = NEF(param, tag_vocabulary)
 
+        if flags['restore']:
+            print('[ Model is restoring from: {} ]'.format(flags['data_dir']))
+            model.load(sess, flags['checkpoint_dir'])
+            print('[ Model was restored ]')
+        else:
+            print('[ Model is initialize from scratch ]')
+            sess.run(tf.global_variables_initializer())
+
         # print config
         print(model.config)
-        sess.run(tf.global_variables_initializer())
 
         # start learning
         start_learning = time.time()
