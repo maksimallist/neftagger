@@ -178,13 +178,9 @@ def heritable_attention_block(hidden_states, state_size, window_size, sketch_dim
 
     def context_aggregate(hidstates, sk, padding_col):
         # add column on right and left, and add context window
-        hidstates = tf.pad(hidstates, padding_col, "CONSTANT", name="HS_padded")
-        sk = tf.pad(sk, padding_col, "CONSTANT", name="HS_padded")
-
-        hidstates = aggregate(hidstates, window_size)  # [batch_size, L, state*(2*window_size + 1)]
-        sk = aggregate(sk, window_size)  # [batch_size, L, sketch_dim*(2*window_size + 1)]
-
         hs = tf.concat([hidstates, sk], 2)  # [batch_size, L, (state + sketch_dim)*(2*window_size + 1)]
+        hs = tf.pad(hs, padding_col, "CONSTANT", name="HS_padded")
+        hs = aggregate(hs, window_size)  # [batch_size, L, (sketch_dim + state)*(2*window_size + 1)]
 
         return hs
 
