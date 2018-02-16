@@ -36,7 +36,7 @@ def heritable_attention_block(hidden_states, state_size, window_size, sketch_dim
     v = tf.get_variable(name="v", shape=[dim_hlayer, 1],
                         initializer=tf.random_uniform_initializer(dtype=tf.float32))
 
-    def conv_r(padded_matrix, r):
+    def aggregate(padded_matrix, r):
         """
         Extract r context columns around each column and concatenate
         :param padded_matrix: batch_size x L+(2*r) x 2*state_size
@@ -62,13 +62,13 @@ def heritable_attention_block(hidden_states, state_size, window_size, sketch_dim
         # switch back: batch_size x L x (2*r+1)*2(state_size) (batch-major)
         return batch_major_contexts
 
-    def prepare_tensor(hidstates, sk, padding_col):
+    def context_aggregate(hidstates, sk, padding_col):
         # add column on right and left, and add context window
         hidstates = tf.pad(hidstates, padding_col, "CONSTANT", name="HS_padded")
         sk = tf.pad(sk, padding_col, "CONSTANT", name="HS_padded")
 
-        hidstates = conv_r(hidstates, window_size)  # [batch_size, L, state*(2*window_size + 1)]
-        sk = conv_r(sk, window_size)  # [batch_size, L, sketch_dim*(2*window_size + 1)]
+        hidstates = aggregate(hidstates, window_size)  # [batch_size, L, state*(2*window_size + 1)]
+        sk = aggregate(sk, window_size)  # [batch_size, L, sketch_dim*(2*window_size + 1)]
 
         hs = tf.concat([hidstates, sk], 2)  # [batch_size, L, (state + sketch_dim)*(2*window_size + 1)]
 
@@ -179,7 +179,7 @@ def heritable_attention_block(hidden_states, state_size, window_size, sketch_dim
 
     for i in range(sketches_num):
 
-        sketch_, cum_att_ = sketch_step(prepare_tensor(hidden_states, sketch, padding_hs_col),
+        sketch_, cum_att_ = sketch_step(context_aggregate(hidden_states, sketch, padding_hs_col),
                                         cum_att, temperature)
 
         sketch += sketch_
